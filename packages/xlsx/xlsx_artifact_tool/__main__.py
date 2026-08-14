@@ -1,0 +1,19 @@
+from __future__ import annotations
+import json,sys
+from pathlib import Path
+from .api import XlsxArtifactTool,_refusal
+
+def main():
+ try:
+  payload=json.load(sys.stdin)
+  if not isinstance(payload,dict) or not isinstance(payload.get('action'),str):raise ValueError('validation_failure')
+  tool=XlsxArtifactTool(payload.get('workdir','.xlsx-artifact-work'));action=payload['action']
+  if action=='create':result=tool.create(payload['model'],Path(payload['output']))
+  elif action=='inspect':result=tool.inspect(Path(payload['source']),view=payload.get('view','summary'),sheet=payload.get('sheet'),range_ref=payload.get('range'),query=payload.get('query'))
+  elif action=='plan':result=tool.plan(payload['snapshot'],payload['request'])
+  elif action=='apply':result=tool.apply(Path(payload['source']),payload['plan'],Path(payload['output']))
+  elif action=='validate':result=tool.validate(Path(payload['source']),before=Path(payload['before']) if payload.get('before') else None)
+  else:result=_refusal('unsupported_capability')
+ except (KeyError,TypeError,ValueError,json.JSONDecodeError):result=_refusal('validation_failure')
+ print(json.dumps(result,ensure_ascii=False,separators=(',',':')))
+if __name__=='__main__':main()

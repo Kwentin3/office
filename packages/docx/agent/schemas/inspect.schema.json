@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["source","view"],"properties":{"source":{"type":"string"},"view":{"enum":["full","search"]},"query":{"type":"string"}},"allOf":[{"if":{"properties":{"view":{"const":"search"}}},"then":{"required":["query"]}}]}

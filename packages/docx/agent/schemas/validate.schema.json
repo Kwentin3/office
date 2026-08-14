@@ -1,0 +1,5 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema",
+ "type":"object","additionalProperties":false,"required":["path"],
+ "properties":{"path":{"type":"string"},"before":{"type":"string"},"expectations":{"type":"object","additionalProperties":false,"properties":{"changed_members":{"type":"array","items":{"type":"string"}}}}}
+}

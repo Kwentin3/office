@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["status","reason","details"],"properties":{"status":{"const":"refused"},"reason":{"enum":["ambiguous_target","unsupported_capability","unsafe_plan","validation_failure","stale_snapshot"]},"details":{"type":"string"}}}

@@ -1,0 +1,9 @@
+include LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md pyproject.toml
+recursive-include docs *.md
+recursive-include examples *.py *.json *.md
+recursive-include packages *.py *.md *.json *.ttf *.txt
+recursive-include tests *.py
+recursive-include scripts *.py
+global-exclude __pycache__ *.py[cod] *.log
+prune build
+prune dist

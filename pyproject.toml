@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kwentin-office"
+version = "0.1.0"
+description = "Contract-first, bounded DOCX, XLSX, and PPTX artifact tools"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Kwentin3" }]
+keywords = ["office", "docx", "xlsx", "pptx", "open-webui", "llm-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business",
+]
+dependencies = [
+  "lxml>=5,<7",
+  "openpyxl>=3.1,<4",
+  "Pillow>=10,<13",
+  "python-docx>=1.1,<2",
+  "python-pptx>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = ["build>=1.2", "pytest>=8", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/Kwentin3/office"
+Repository = "https://github.com/Kwentin3/office"
+Issues = "https://github.com/Kwentin3/office/issues"
+
+[project.scripts]
+office-docx = "office_artifact_tool.__main__:main"
+office-xlsx = "xlsx_artifact_tool.__main__:main"
+office-pptx-edit = "pptx_artifact_tool.__main__:main"
+office-pptx-compose = "pptx_ai_composer.__main__:main"
+
+[tool.setuptools.packages.find]
+where = [
+  "packages/docx",
+  "packages/xlsx",
+  "packages/pptx-editor",
+  "packages/pptx-composer",
+]
+include = [
+  "office_artifact_tool*",
+  "xlsx_artifact_tool*",
+  "pptx_artifact_tool*",
+  "pptx_ai_composer*",
+]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+office_artifact_tool = ["resources/*.json", "resources/*.md"]
+xlsx_artifact_tool = ["resources/*.json", "resources/*.md"]
+pptx_artifact_tool = ["resources/*.md"]
+pptx_ai_composer = ["assets/*.ttf", "assets/*.txt", "resources/*.md"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = ["packages/*/tests"]

@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package and build tools
+        run: python -m pip install --upgrade pip build && python -m pip install -e .
+      - name: Run all domain suites
+        run: python scripts/test_all.py
+      - name: Build wheel and source archive
+        run: python -m build
+      - name: Verify distribution contents
+        run: python scripts/verify_distribution.py dist
+      - name: Verify wheel install
+        run: |
+          python -m venv /tmp/office-wheel
+          cd /tmp
+          /tmp/office-wheel/bin/python -m pip install --force-reinstall "$GITHUB_WORKSPACE"/dist/*.whl
+          /tmp/office-wheel/bin/python -c "import office_artifact_tool, xlsx_artifact_tool, pptx_artifact_tool, pptx_ai_composer"
