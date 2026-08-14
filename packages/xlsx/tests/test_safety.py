@@ -1,11 +1,17 @@
 from __future__ import annotations
-import copy,tempfile,unittest,zipfile
+
+import copy
+import tempfile
+import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
+
 from openpyxl import load_workbook
 from openpyxl.comments import Comment
 from xlsx_artifact_tool import XlsxArtifactTool
 from xlsx_artifact_tool.api import _object_sha
+
 
 class SafetyTests(unittest.TestCase):
  def setUp(self):
@@ -192,5 +198,7 @@ class SafetyTests(unittest.TestCase):
   with patch('xlsx_artifact_tool.api.load_workbook',side_effect=corrupt_candidate),patch('xlsx_artifact_tool.api.os.replace',side_effect=guard_publication):
    result=self.tool.apply(self.source,plan,out)
   self.assertEqual(result['status'],'refused');self.assertEqual(result['reason'],'validation_failure');self.assertFalse(out.exists());self.assertEqual(publication_attempts,[])
+ def test_public_refusal_reason_is_closed_for_invalid_coordinate(self):
+  snap=self.tool.inspect(self.source,view='region',sheet='Data',range_ref='A1:B2');target=next(x for x in snap['cells'] if x['coordinate']=='B2');plan=self.tool.plan(snap,{'operations':[{'type':'set_cell_value','target_id':target['id'],'value':3,'expected_kind':'value'}]})['plan'];plan['operations'][0]['coordinate']='not-a-range';raw=dict(plan);raw.pop('plan_sha256');plan['plan_sha256']=_object_sha(raw);result=self.tool.apply(self.source,plan,self.root/'invalid-coordinate.xlsx');self.assertEqual((result['status'],result['reason']),('refused','validation_failure'))
 
 if __name__=='__main__':unittest.main()

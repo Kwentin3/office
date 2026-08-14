@@ -2,6 +2,16 @@
 
 All notable changes will be documented here.
 
+## 0.3.0 — 2026-08-14
+
+- Added format-local Rich Inspect schema v2 findings with deterministic bounded DOCX story, XLSX worksheet/range and PPTX slide/shape locations.
+- Localized only preservation-proven policy decisions; package-global macros, signatures, protection, ActiveX and OLE remain global blockers, and incomplete findings fail closed.
+- Added executable preservation matrices covering same/different scope edits and exact non-target ZIP-member equality across DOCX, XLSX and PPTX.
+- Added closed host-supplied Application Witness runtime identity without allowing request JSON to choose the executable, work directory or identity.
+- Added fixed-argv manual LibreOffice matrix and XLSX cached-value recalculation gates with hermetic fake-executable tests.
+- Hardened application evidence against normalized-formula destruction, runtime-identity mutation, cleanup directory swaps and package-root relationship traversal.
+- Added a manual-only self-hosted LibreOffice workflow; no schedule or production compatibility claim is enabled without real pinned-runtime evidence.
+
 ## 0.2.0 — 2026-08-14
 
 - Added format-specific Rich Inspect inventories and mutation policy decisions for DOCX, XLSX, and PPTX.

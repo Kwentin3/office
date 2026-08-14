@@ -12,9 +12,15 @@ RefusalReason = Literal[
 ]
 
 
+class RuntimeIdentity(TypedDict):
+    application_version: str
+    image_digest: str
+
+
 class WitnessObservation(TypedDict):
     application: Literal["LibreOffice"]
-    version: Literal["not_observed"]
+    version: str
+    runtime_identity: RuntimeIdentity
     claim: Literal["libreoffice_private_clone_observed"]
     operation: Literal["pdf_render", "recalculation_roundtrip"]
     process_exit: Literal["pass"]

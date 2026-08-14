@@ -80,7 +80,9 @@ class RichInventoryTests(unittest.TestCase):
     def test_inventory_reports_safe_baseline(self) -> None:
         result = self.tool.inspect(self.source, view="inventory")
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(result["schema_version"], 1)
+        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual([item["feature"] for item in result["findings"]], ["managed_slots"])
+        self.assertFalse(result["findings_truncated"])
         self.assertEqual(set(result["features"]), PPTX_FEATURES)
         self.assertEqual(result["mutation_policy"]["decision"], "safe")
         self.assertEqual(result["features"]["ole_objects"], 0)

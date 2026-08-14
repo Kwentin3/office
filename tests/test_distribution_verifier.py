@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import base64
+import csv
+import hashlib
 import importlib.util
+import io
 import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import unittest
 import zipfile
 from io import BytesIO
@@ -28,7 +33,8 @@ VALID_ENTRY_POINTS = (
     b"office-pptx-compose = pptx_ai_composer.__main__:main\n"
     b"office-witness = office_application_witness.__main__:main\n"
 )
-VALID_METADATA = b"Metadata-Version: 2.4\nName: kwentin-office\nVersion: 0.2.0\nRequires-Python: >=3.11\n"
+VALID_METADATA = b"Metadata-Version: 2.4\nName: kwentin-office\nVersion: 0.3.0\nRequires-Python: >=3.11\n"
+VALID_WHEEL = b"Wheel-Version: 1.0\nGenerator: kwentin-tests\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
 VALID_TOP_LEVEL = b"\n".join(name.encode() for name in sorted(VERIFIER.REQUIRED_TOP_LEVEL)) + b"\n"
 
 
@@ -47,37 +53,62 @@ class DistributionVerifierTests(unittest.TestCase):
         omit_sdist: str | None = None,
         entry_points: bytes = VALID_ENTRY_POINTS,
         metadata: bytes = VALID_METADATA,
+        wheel_metadata: bytes = VALID_WHEEL,
+        record_override: bytes | None = None,
         top_level: bytes = VALID_TOP_LEVEL,
         extra_wheel: str | None = None,
         extra_sdist: str | None = None,
         duplicate_wheel: str | None = None,
+        wheel_name: str = "kwentin_office-0.3.0-py3-none-any.whl",
+        sdist_name: str = "kwentin_office-0.3.0.tar.gz",
     ) -> None:
-        wheel = self.dist / "kwentin_office-0.2.0-py3-none-any.whl"
+        wheel = self.dist / wheel_name
+        members = sorted(WHEEL_MEMBERS - ({omit_wheel} if omit_wheel else set()))
+        payloads: dict[str, bytes] = {}
+        for name in members:
+            if name == f"{DIST_INFO}/RECORD":
+                continue
+            if name == f"{DIST_INFO}/entry_points.txt":
+                payload = entry_points
+            elif name == f"{DIST_INFO}/METADATA":
+                payload = metadata
+            elif name == f"{DIST_INFO}/WHEEL":
+                payload = wheel_metadata
+            elif name == f"{DIST_INFO}/top_level.txt":
+                payload = top_level
+            else:
+                payload = b"x"
+            payloads[name] = payload
+        if extra_wheel:
+            payloads[extra_wheel] = b"x"
+        record_name = f"{DIST_INFO}/RECORD"
+        if record_name in members:
+            if record_override is None:
+                stream = io.StringIO(newline="")
+                writer = csv.writer(stream, lineterminator="\n")
+                for name, payload in sorted(payloads.items()):
+                    digest = base64.urlsafe_b64encode(hashlib.sha256(payload).digest()).rstrip(b"=").decode("ascii")
+                    writer.writerow((name, f"sha256={digest}", str(len(payload))))
+                writer.writerow((record_name, "", ""))
+                payloads[record_name] = stream.getvalue().encode("utf-8")
+            else:
+                payloads[record_name] = record_override
         with zipfile.ZipFile(wheel, "w") as archive:
-            for name in sorted(WHEEL_MEMBERS - ({omit_wheel} if omit_wheel else set())):
-                if name == f"{DIST_INFO}/entry_points.txt":
-                    payload = entry_points
-                elif name == f"{DIST_INFO}/METADATA":
-                    payload = metadata
-                elif name == f"{DIST_INFO}/top_level.txt":
-                    payload = top_level
-                else:
-                    payload = b"x"
-                archive.writestr(name, payload)
-            if extra_wheel:
-                archive.writestr(extra_wheel, b"x")
+            for name in members:
+                if name in payloads:
+                    archive.writestr(name, payloads[name])
             if duplicate_wheel:
                 archive.writestr(duplicate_wheel, b"duplicate")
-        sdist = self.dist / "kwentin_office-0.2.0.tar.gz"
+        sdist = self.dist / sdist_name
         with tarfile.open(sdist, "w:gz") as archive:
             for suffix in sorted(SDIST_MEMBERS - ({omit_sdist} if omit_sdist else set())):
                 payload = b"x"
-                info = tarfile.TarInfo(f"kwentin_office-0.2.0/{suffix}")
+                info = tarfile.TarInfo(f"kwentin_office-0.3.0/{suffix}")
                 info.size = len(payload)
                 archive.addfile(info, BytesIO(payload))
             if extra_sdist:
                 payload = b"x"
-                info = tarfile.TarInfo(f"kwentin_office-0.2.0/{extra_sdist}")
+                info = tarfile.TarInfo(f"kwentin_office-0.3.0/{extra_sdist}")
                 info.size = len(payload)
                 archive.addfile(info, BytesIO(payload))
 
@@ -115,10 +146,42 @@ class DistributionVerifierTests(unittest.TestCase):
 
     def test_metadata_and_top_level_contents_are_closed(self) -> None:
         for kwargs in (
-            {"metadata": VALID_METADATA.replace(b"Version: 0.2.0", b"Version: 9.9.9")},
+            {"metadata": VALID_METADATA.replace(b"Version: 0.3.0", b"Version: 9.9.9")},
             {"top_level": b"office_artifact_tool\n"},
         ):
             with self.subTest(kwargs=kwargs):
+                self.write_archives(**kwargs)
+                self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_wheel_metadata_and_record_contents_are_verified(self) -> None:
+        for kwargs in (
+            {"wheel_metadata": b"x"},
+            {"record_override": b"x"},
+        ):
+            with self.subTest(kwargs=kwargs):
+                self.write_archives(**kwargs)
+                self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_wheel_compatibility_headers_are_exact_singletons(self) -> None:
+        for wheel_metadata in (
+            VALID_WHEEL + b"Tag: cp312-cp312-manylinux_2_17_x86_64\n",
+            VALID_WHEEL + b"Root-Is-Purelib: false\n",
+            VALID_WHEEL + b"Wheel-Version: 2.0\n",
+        ):
+            with self.subTest(wheel_metadata=wheel_metadata):
+                self.write_archives(wheel_metadata=wheel_metadata)
+                self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_artifact_filenames_are_bound_to_name_version_and_tag(self) -> None:
+        for kwargs in (
+            {"wheel_name": "renamed-0.3.0-py3-none-any.whl"},
+            {"wheel_name": "kwentin_office-0.3.0-cp312-cp312-manylinux_2_17_x86_64.whl"},
+            {"sdist_name": "renamed-0.3.0.tar.gz"},
+            {"sdist_name": "kwentin_office-9.9.9.tar.gz"},
+        ):
+            with self.subTest(kwargs=kwargs):
+                for artifact in self.dist.iterdir():
+                    artifact.unlink()
                 self.write_archives(**kwargs)
                 self.assertNotEqual(self.verify().returncode, 0)
 
@@ -133,6 +196,12 @@ class DistributionVerifierTests(unittest.TestCase):
     def test_duplicate_archive_member_is_refused(self) -> None:
         self.write_archives(duplicate_wheel="pptx_ai_composer/preview.py")
         self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_ci_clean_install_asserts_current_project_version(self) -> None:
+        with (ROOT / "pyproject.toml").open("rb") as stream:
+            version = tomllib.load(stream)["project"]["version"]
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn(f"m.version('kwentin-office') == '{version}'", workflow)
 
 
 if __name__ == "__main__":

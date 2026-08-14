@@ -22,10 +22,10 @@ The Office package remains provider-agnostic. The Open WebUI layer owns conversa
 Pin a release tag in a slim production image without adding a `git` binary:
 
 ```text
-kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.2.0.zip
+kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.3.0.zip
 ```
 
-For an exact commit, replace `refs/tags/v0.2.0` with its 40-character commit SHA. During local development:
+For an exact commit, replace `refs/tags/v0.3.0` with its 40-character commit SHA. During local development:
 
 ```bash
 python -m pip install -e /path/to/office
@@ -56,7 +56,7 @@ Add the pinned archive dependency to `services/office-artifacts/pyproject.toml`:
 [project]
 requires-python = ">=3.11"
 dependencies = [
-  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.2.0.zip",
+  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.3.0.zip",
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1",
 ]

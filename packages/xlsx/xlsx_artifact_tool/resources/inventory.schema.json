@@ -9,11 +9,13 @@
     "view",
     "source_sha256",
     "features",
+    "findings",
+    "findings_truncated",
     "mutation_policy"
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "status": {
       "const": "ok"
@@ -168,6 +170,7 @@
           "items": {
             "enum": [
               "external_links",
+              "external_relationships",
               "connections",
               "ole_objects",
               "activex",
@@ -183,7 +186,6 @@
           "uniqueItems": true,
           "items": {
             "enum": [
-              "external_relationships",
               "charts",
               "pivots",
               "tables",
@@ -256,6 +258,100 @@
           }
         }
       ]
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "feature",
+          "scope",
+          "part"
+        ],
+        "properties": {
+          "feature": {
+            "enum": [
+              "external_links",
+              "external_relationships",
+              "charts",
+              "pivots",
+              "tables",
+              "comments",
+              "data_validations",
+              "conditional_formatting",
+              "defined_names",
+              "merged_ranges",
+              "formula_cells",
+              "shared_formulas",
+              "array_formulas",
+              "drawings",
+              "connections",
+              "embedded_packages",
+              "ole_objects",
+              "activex",
+              "workbook_protection",
+              "sheet_protection",
+              "macros",
+              "signatures"
+            ]
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "workbook",
+              "worksheet",
+              "member"
+            ]
+          },
+          "part": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+          },
+          "sheet": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 31
+          },
+          "range": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "sheet"
+              ]
+            },
+            "then": {
+              "properties": {
+                "scope": {
+                  "const": "worksheet"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "range"
+              ]
+            },
+            "then": {
+              "required": [
+                "sheet"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "findings_truncated": {
+      "type": "boolean"
     }
   }
 }

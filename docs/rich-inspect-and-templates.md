@@ -8,10 +8,13 @@ The result contains:
 
 ```json
 {
+  "schema_version": 2,
   "status": "ok",
   "artifact_type": "docx",
   "view": "inventory",
   "features": {"tracked_changes": 0},
+  "findings": [],
+  "findings_truncated": false,
   "mutation_policy": {
     "decision": "safe",
     "blockers": [],
@@ -33,6 +36,10 @@ Current blockers are deliberately closed and format-specific:
 - PPTX: OLE/ActiveX, modification protection, macros, signatures.
 
 Headers, footers, footnotes and endnotes are counted in DOCX but are not warnings because the current inspector already addresses those stories. An embedded package is not classified as OLE unless an OLE node or relationship is present.
+
+Schema v2 adds deterministic, bounded, format-local findings. DOCX locations use package story parts and stable transaction targets where available; XLSX locations use worksheet parts, sheet names and ranges; PPTX locations use slide parts plus slide/shape identity. The three schemas intentionally do not share a generic Office location model.
+
+Location changes policy only where the package has a tested preservation boundary. For example, tracked changes in an untouched DOCX header no longer block a body edit, while tracked changes in the edited story still refuse. XLSX value/formula edits preserve non-target members byte-for-byte and structural edits use a closed part allowlist. Package-global risks such as signatures, macros, protection, ActiveX and OLE remain global blockers. Truncated or incomplete findings fail closed.
 
 The inventory is evidence about the listed features only. It is not a claim that every possible OOXML extension is understood.
 

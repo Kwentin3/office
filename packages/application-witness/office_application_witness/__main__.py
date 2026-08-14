@@ -13,11 +13,25 @@ def main() -> int:
         parser = argparse.ArgumentParser(prog="office-witness")
         parser.add_argument("--workdir", required=True)
         parser.add_argument("--executable", required=True)
+        parser.add_argument("--runtime-version")
+        parser.add_argument("--runtime-image-digest")
         args = parser.parse_args()
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict) or set(payload) - {"source", "artifact_type", "timeout_seconds"}:
             raise ValueError
-        witness = ApplicationWitness(args.workdir, executable=args.executable)
+        if (args.runtime_version is None) != (args.runtime_image_digest is None):
+            raise ValueError
+        runtime_identity = None
+        if args.runtime_version is not None:
+            runtime_identity = {
+                "application_version": args.runtime_version,
+                "image_digest": args.runtime_image_digest,
+            }
+        witness = ApplicationWitness(
+            args.workdir,
+            executable=args.executable,
+            runtime_identity=runtime_identity,
+        )
         result = witness.observe(
             Path(payload["source"]),
             payload["artifact_type"],
