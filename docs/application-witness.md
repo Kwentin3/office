@@ -26,6 +26,10 @@ from office_application_witness import ApplicationWitness
 witness = ApplicationWitness(
     "/srv/office-work/request-123/witness",
     executable="/usr/bin/soffice",
+    runtime_identity={
+        "application_version": "LibreOffice 26.2.5.2",
+        "image_digest": "sha256:<64 lowercase hex characters>",
+    },
 )
 report = witness.observe(
     "/srv/office-work/request-123/output/result.docx",
@@ -39,9 +43,9 @@ Supported observations:
 - DOCX/PPTX: conversion of a private clone to a bounded PDF and PDF signature validation;
 - XLSX: conversion of a private clone to a separate XLSX round-trip and ZIP validation.
 
-The XLSX operation asks LibreOffice to recalculate during round-trip, but the adapter does not semantically verify cached formula values. The report therefore says `requested_not_semantically_verified`.
+The generic XLSX operation asks LibreOffice to recalculate during round-trip, but the generic adapter does not semantically verify cached formula values. The report therefore says `requested_not_semantically_verified`. The separate `scripts/application_gates/run_xlsx_recalculation.py` gate performs a private fixed-argv round-trip and then compares only declared cached values, with explicit type/tolerance and unsupported-formula cases.
 
-Success and refusal results are closed `TypedDict` contracts with `schema_version: 1`. The adapter deliberately reports `version: not_observed`; a production image may collect version evidence separately, but unbounded application output is never captured by this adapter.
+Success and refusal results are closed `TypedDict` contracts with `schema_version: 1`. Runtime identity is host-supplied, closed to `application_version` and a full `sha256:` image digest, bounded and validated before process launch. When absent, both fields are `not_observed`. JSON stdin cannot choose or override this identity, the executable, or the work directory; unbounded application output is never captured.
 
 ## Claims intentionally not made
 
@@ -52,4 +56,4 @@ Success and refusal results are closed `TypedDict` contracts with `schema_versio
 
 ## Runtime gate
 
-The package does not install LibreOffice. The host sidecar must provide and pin the absolute executable path. The JSON stdin contract cannot choose either the executable or work directory; those are host-controlled required CLI arguments/configuration. This repository's CI is hermetic and uses a fake executable. A deployment that needs application evidence must add a separate job using its actual pinned LibreOffice image and record the image/application version beside the witness report.
+The package does not install LibreOffice. The host sidecar must provide and pin the absolute executable path. Repository CI is hermetic and uses fake executables. `.github/workflows/libreoffice-compat.yml` is a manual-only gate requiring a self-hosted runner labeled `office-libreoffice-pinned` and host-controlled runtime identity variables. It generates non-sensitive fixtures, records exact commit/tree plus runtime identity, runs DOCX/XLSX/PPTX observations, and runs the declared XLSX cached-value gate. No schedule is enabled until a real pinned host produces a stable evidence series.

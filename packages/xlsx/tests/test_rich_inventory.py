@@ -9,6 +9,9 @@ from pathlib import Path
 
 from lxml import etree
 from openpyxl import Workbook
+from openpyxl.comments import Comment
+from openpyxl.formatting.rule import CellIsRule
+from openpyxl.worksheet.datavalidation import DataValidation
 from xlsx_artifact_tool import XlsxArtifactTool
 from xlsx_artifact_tool.inventory import BLOCKER_FEATURES, WARNING_FEATURES
 
@@ -77,16 +80,77 @@ class RichInventoryTests(unittest.TestCase):
     def test_inventory_reports_safe_baseline(self) -> None:
         result = self.tool.inspect(self.source, view="inventory")
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(result["schema_version"], 1)
+        self.assertEqual(result["schema_version"], 2)
         self.assertEqual(set(result["features"]), XLSX_FEATURES)
         self.assertEqual(result["mutation_policy"]["decision"], "safe")
         self.assertEqual(result["features"]["external_links"], 0)
         self.assertEqual(result["features"]["charts"], 0)
+        self.assertEqual(result["findings"], [])
+        self.assertFalse(result["findings_truncated"])
+
+    def test_inventory_v2_findings_are_deterministic_and_location_aware(self) -> None:
+        workbook = Workbook()
+        data = workbook.active
+        data.title = "Data"
+        data["A1"] = "amount"
+        data["A2"] = 10
+        data["A2"].comment = Comment("review", "tester")
+        validation = DataValidation(type="whole", operator="greaterThan", formula1="0")
+        validation.add("A2:A9")
+        data.add_data_validation(validation)
+        data.conditional_formatting.add("A2:A9", CellIsRule(operator="greaterThan", formula=["5"]))
+        data.merge_cells("C1:D1")
+        other = workbook.create_sheet("Other")
+        other["A1"] = "untouched"
+        workbook.create_named_range("InputRange", data, "A2:A9")
+        workbook.save(self.source)
+
+        first = self.tool.inspect(self.source, view="inventory")
+        second = self.tool.inspect(self.source, view="inventory")
+        self.assertEqual(first["findings"], second["findings"])
+        self.assertFalse(first["findings_truncated"])
+        by_feature = {}
+        for finding in first["findings"]:
+            by_feature.setdefault(finding["feature"], []).append(finding)
+            self.assertFalse(finding["part"].startswith("/"))
+            self.assertNotIn("..", Path(finding["part"]).parts)
+        self.assertEqual(by_feature["comments"][0]["scope"], "worksheet")
+        self.assertEqual(by_feature["comments"][0]["sheet"], "Data")
+        self.assertEqual(by_feature["comments"][0]["range"], "A2")
+        self.assertTrue(by_feature["comments"][0]["part"].startswith("xl/comments"))
+        self.assertEqual(by_feature["data_validations"][0]["range"], "A2:A9")
+        self.assertEqual(by_feature["conditional_formatting"][0]["range"], "A2:A9")
+        self.assertEqual(by_feature["merged_ranges"][0]["range"], "C1:D1")
+        self.assertEqual(by_feature["defined_names"][0]["sheet"], "Data")
+        self.assertEqual(by_feature["defined_names"][0]["range"], "A2:A9")
+
+    def test_inventory_v2_findings_are_bounded_and_report_truncation(self) -> None:
+        workbook = Workbook()
+        sheet = workbook.active
+        for row in range(1, 1102):
+            sheet.cell(row, 1, f"={row}")
+        workbook.save(self.source)
+        result = self.tool.inspect(self.source, view="inventory")
+        self.assertEqual(result["features"]["formula_cells"], 1101)
+        self.assertEqual(len(result["findings"]), 1000)
+        self.assertTrue(result["findings_truncated"])
+        self.assertEqual(
+            result["findings"],
+            sorted(
+                result["findings"],
+                key=lambda item: (
+                    item["feature"], item["scope"], item["part"], item.get("sheet", ""), item.get("range", "")
+                ),
+            ),
+        )
 
     def test_inventory_schema_matches_policy_partitions(self) -> None:
         schema = json.loads(
             (Path(__file__).parents[1] / "xlsx_artifact_tool/resources/inventory.schema.json").read_text()
         )
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
+        self.assertEqual(schema["properties"]["findings"]["maxItems"], 1000)
+        self.assertIn("findings_truncated", schema["required"])
         policy = schema["properties"]["mutation_policy"]
         self.assertEqual(set(policy["properties"]["blockers"]["items"]["enum"]), set(BLOCKER_FEATURES))
         self.assertEqual(set(policy["properties"]["warnings"]["items"]["enum"]), set(WARNING_FEATURES))

@@ -9,11 +9,13 @@
     "view",
     "source_sha256",
     "features",
+    "findings",
+    "findings_truncated",
     "mutation_policy"
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "status": {
       "const": "ok"
@@ -145,6 +147,34 @@
           "minimum": 0
         }
       }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["feature", "scope", "part"],
+        "properties": {
+          "feature": {
+            "enum": [
+              "tracked_changes", "content_controls", "comments", "images", "fields", "alt_chunks",
+              "text_boxes", "merged_cells", "hyperlinks", "external_relationships", "headers", "footers",
+              "footnotes", "endnotes", "charts", "smartart", "embedded_packages", "ole_objects", "activex",
+              "document_protection", "macros", "signatures"
+            ]
+          },
+          "scope": {"enum": ["story", "relationship", "package", "settings", "comments"]},
+          "part": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          },
+          "target_id": {"type": "string", "pattern": "^tx_[0-9a-f]{24}$"}
+        }
+      }
+    },
+    "findings_truncated": {
+      "type": "boolean"
     },
     "mutation_policy": {
       "type": "object",

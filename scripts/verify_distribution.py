@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
+import base64
 import configparser
+import csv
 import email.parser
+import hashlib
+import io
 import sys
 import tarfile
 import zipfile
@@ -36,6 +40,7 @@ WHEEL_RUNTIME = {
     "xlsx_artifact_tool/__main__.py",
     "xlsx_artifact_tool/api.py",
     "xlsx_artifact_tool/inventory.py",
+    "xlsx_artifact_tool/preservation.py",
     "xlsx_artifact_tool/resources/AGENT_SKILL.md",
     "xlsx_artifact_tool/resources/CONTRACT.md",
     "xlsx_artifact_tool/resources/create.schema.json",
@@ -68,7 +73,9 @@ WHEEL_RUNTIME = {
     "office_application_witness/api.py",
     "office_application_witness/contracts.py",
 }
-DIST_INFO = "kwentin_office-0.2.0.dist-info"
+DIST_INFO = "kwentin_office-0.3.0.dist-info"
+WHEEL_FILENAME = "kwentin_office-0.3.0-py3-none-any.whl"
+SDIST_FILENAME = "kwentin_office-0.3.0.tar.gz"
 WHEEL_METADATA = {
     f"{DIST_INFO}/METADATA",
     f"{DIST_INFO}/WHEEL",
@@ -175,10 +182,13 @@ def metadata_is_valid(payload: bytes) -> bool:
         metadata = email.parser.BytesParser().parsebytes(payload)
     except (TypeError, ValueError):
         return False
-    return (
-        metadata.get("Name") == "kwentin-office"
-        and metadata.get("Version") == "0.2.0"
-        and metadata.get("Requires-Python") == ">=3.11"
+    return not metadata.defects and all(
+        metadata.get_all(name) == [value]
+        for name, value in (
+            ("Name", "kwentin-office"),
+            ("Version", "0.3.0"),
+            ("Requires-Python", ">=3.11"),
+        )
     )
 
 
@@ -188,6 +198,44 @@ def top_level_is_valid(payload: bytes) -> bool:
     except UnicodeDecodeError:
         return False
     return names == REQUIRED_TOP_LEVEL
+
+
+def wheel_metadata_is_valid(payload: bytes) -> bool:
+    try:
+        metadata = email.parser.BytesParser().parsebytes(payload)
+    except (TypeError, ValueError):
+        return False
+    return not metadata.defects and all(
+        metadata.get_all(name) == [value]
+        for name, value in (
+            ("Wheel-Version", "1.0"),
+            ("Root-Is-Purelib", "true"),
+            ("Tag", "py3-none-any"),
+        )
+    )
+
+
+def record_is_valid(payload: bytes, archive_payloads: dict[str, bytes]) -> bool:
+    try:
+        rows = list(csv.reader(io.StringIO(payload.decode("utf-8"), newline="")))
+    except (UnicodeDecodeError, csv.Error):
+        return False
+    if any(len(row) != 3 for row in rows):
+        return False
+    entries = {row[0]: (row[1], row[2]) for row in rows}
+    if len(entries) != len(rows) or set(entries) != set(archive_payloads):
+        return False
+    record_name = f"{DIST_INFO}/RECORD"
+    for name, data in archive_payloads.items():
+        digest, size = entries[name]
+        if name == record_name:
+            if digest or size:
+                return False
+            continue
+        expected = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode("ascii")
+        if digest != f"sha256={expected}" or size != str(len(data)):
+            return False
+    return True
 
 
 def strip_sdist_root(names: list[str]) -> tuple[str | None, set[str]]:
@@ -207,8 +255,11 @@ def main() -> int:
     sdists = sorted(dist.glob("*.tar.gz"))
     if len(wheels) != 1 or len(sdists) != 1:
         raise SystemExit("expected exactly one wheel and one sdist")
+    if wheels[0].name != WHEEL_FILENAME or sdists[0].name != SDIST_FILENAME:
+        raise SystemExit("artifact filename does not match project name, version, and wheel tag")
     with zipfile.ZipFile(wheels[0]) as archive:
         wheel_names = archive.namelist()
+        wheel_archive_payloads = {name: archive.read(name) for name in wheel_names}
         wheel_payload = {name: archive.read(name) for name in WHEEL_METADATA if name in wheel_names}
     with tarfile.open(sdists[0], "r:gz") as archive:
         members = archive.getmembers()
@@ -229,6 +280,10 @@ def main() -> int:
     console_scripts = parse_console_scripts(wheel_payload.get(f"{DIST_INFO}/entry_points.txt", b""))
     invalid_console_scripts = console_scripts != REQUIRED_CONSOLE_SCRIPTS
     invalid_metadata = not metadata_is_valid(wheel_payload.get(f"{DIST_INFO}/METADATA", b""))
+    invalid_wheel_metadata = not wheel_metadata_is_valid(wheel_payload.get(f"{DIST_INFO}/WHEEL", b""))
+    invalid_record = not record_is_valid(
+        wheel_payload.get(f"{DIST_INFO}/RECORD", b""), wheel_archive_payloads
+    )
     invalid_top_level = not top_level_is_valid(wheel_payload.get(f"{DIST_INFO}/top_level.txt", b""))
     bad = unsafe(wheel_names + sdist_names)
     if (
@@ -236,10 +291,12 @@ def main() -> int:
         or unexpected_wheel
         or missing_sdist
         or unexpected_sdist
-        or sdist_root != "kwentin_office-0.2.0"
+        or sdist_root != "kwentin_office-0.3.0"
         or duplicate_names
         or invalid_console_scripts
         or invalid_metadata
+        or invalid_wheel_metadata
+        or invalid_record
         or invalid_top_level
         or bad
         or non_files
@@ -248,8 +305,9 @@ def main() -> int:
             "distribution verification failed: "
             f"missing_wheel={missing_wheel}, unexpected_wheel={unexpected_wheel}, "
             f"missing_sdist={missing_sdist}, unexpected_sdist={unexpected_sdist}, "
-            f"invalid_sdist_root={sdist_root != 'kwentin_office-0.2.0'}, duplicates={duplicate_names}, "
+            f"invalid_sdist_root={sdist_root != 'kwentin_office-0.3.0'}, duplicates={duplicate_names}, "
             f"invalid_console_scripts={invalid_console_scripts}, invalid_metadata={invalid_metadata}, "
+            f"invalid_wheel_metadata={invalid_wheel_metadata}, invalid_record={invalid_record}, "
             f"invalid_top_level={invalid_top_level}, unsafe={bad}, non_files={non_files}"
         )
     print(f"distribution verified: wheel_members={len(wheel_names)}, sdist_members={len(sdist_names)}")

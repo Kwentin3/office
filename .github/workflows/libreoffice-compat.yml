@@ -1,0 +1,60 @@
+name: LibreOffice compatibility evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  application-gates:
+    runs-on: [self-hosted, linux, office-libreoffice-pinned]
+    timeout-minutes: 30
+    env:
+      LIBREOFFICE_EXECUTABLE: ${{ vars.LIBREOFFICE_EXECUTABLE }}
+      LIBREOFFICE_VERSION: ${{ vars.LIBREOFFICE_VERSION }}
+      LIBREOFFICE_IMAGE_DIGEST: ${{ vars.LIBREOFFICE_IMAGE_DIGEST }}
+      OFFICE_GATE_ROOT: ${{ runner.temp }}/office-gate-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Generate non-sensitive fixtures
+        run: |
+          mkdir -m 700 "$OFFICE_GATE_ROOT"
+          python scripts/application_gates/generate_fixtures.py \
+            --output-dir "$OFFICE_GATE_ROOT/fixtures"
+      - name: Run DOCX/XLSX/PPTX witness matrix
+        run: |
+          python scripts/application_gates/run_libreoffice_matrix.py \
+            --manifest "$OFFICE_GATE_ROOT/fixtures/manifest.json" \
+            --workdir "$OFFICE_GATE_ROOT/witness-work" \
+            --executable "$LIBREOFFICE_EXECUTABLE" \
+            --runtime-version "$LIBREOFFICE_VERSION" \
+            --runtime-image-digest "$LIBREOFFICE_IMAGE_DIGEST" \
+            --source-commit "$GITHUB_SHA" \
+            --source-tree "$(git show -s --format=%T "$GITHUB_SHA")" \
+            > "$OFFICE_GATE_ROOT/libreoffice-matrix-report.json"
+      - name: Verify declared XLSX cached values
+        run: |
+          python scripts/application_gates/run_xlsx_recalculation.py \
+            --source "$OFFICE_GATE_ROOT/fixtures/recalculation.xlsx" \
+            --cases "$OFFICE_GATE_ROOT/fixtures/recalculation-cases.json" \
+            --workdir "$OFFICE_GATE_ROOT/xlsx-recalculation-work" \
+            --executable "$LIBREOFFICE_EXECUTABLE" \
+            --runtime-version "$LIBREOFFICE_VERSION" \
+            --runtime-image-digest "$LIBREOFFICE_IMAGE_DIGEST" \
+            > "$OFFICE_GATE_ROOT/xlsx-recalculation-report.json"
+      - name: Upload bounded evidence reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreoffice-compatibility-evidence-${{ github.sha }}
+          path: |
+            ${{ env.OFFICE_GATE_ROOT }}/libreoffice-matrix-report.json
+            ${{ env.OFFICE_GATE_ROOT }}/xlsx-recalculation-report.json
+          if-no-files-found: error
+          retention-days: 14

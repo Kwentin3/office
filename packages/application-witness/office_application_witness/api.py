@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -12,7 +13,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
-from .contracts import ArtifactType, RefusalReason, WitnessRefusal, WitnessResult
+from .contracts import ArtifactType, RefusalReason, RuntimeIdentity, WitnessRefusal, WitnessResult
 
 _FORMATS: dict[ArtifactType, str] = {"docx": ".docx", "xlsx": ".xlsx", "pptx": ".pptx"}
 _CONVERSIONS: dict[ArtifactType, str] = {
@@ -22,6 +23,27 @@ _CONVERSIONS: dict[ArtifactType, str] = {
 }
 _MAX_SOURCE_BYTES = 256 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 512 * 1024 * 1024
+_IMAGE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+def _runtime_identity(value: RuntimeIdentity | None) -> RuntimeIdentity:
+    if value is None:
+        return {"application_version": "not_observed", "image_digest": "not_observed"}
+    if not isinstance(value, dict) or set(value) != {"application_version", "image_digest"}:
+        raise ValueError("invalid runtime identity")
+    version = value.get("application_version")
+    digest = value.get("image_digest")
+    if version == "not_observed" and digest == "not_observed":
+        return {"application_version": version, "image_digest": digest}
+    if (
+        not isinstance(version, str)
+        or not 1 <= len(version) <= 128
+        or any(ord(character) < 0x20 or ord(character) == 0x7F for character in version)
+        or not isinstance(digest, str)
+        or not _IMAGE_DIGEST.fullmatch(digest)
+    ):
+        raise ValueError("invalid runtime identity")
+    return {"application_version": version, "image_digest": digest}
 
 
 def _refusal(reason: RefusalReason, details: str = "") -> WitnessRefusal:
@@ -305,7 +327,13 @@ def _source_matches(path: Path, original: os.stat_result, expected_sha256: str) 
 class ApplicationWitness:
     """Observe a private clone with a trusted LibreOffice executable."""
 
-    def __init__(self, workdir: str | Path, *, executable: str | Path):
+    def __init__(
+        self,
+        workdir: str | Path,
+        *,
+        executable: str | Path,
+        runtime_identity: RuntimeIdentity | None = None,
+    ):
         self.workdir = Path(workdir)
         if not self.workdir.is_absolute():
             raise ValueError("witness workdir must be absolute")
@@ -316,6 +344,7 @@ class ApplicationWitness:
             raise ValueError("witness workdir must be private and owned by the current OS identity")
         self._workdir_identity = (info.st_dev, info.st_ino)
         self.executable = executable
+        self.runtime_identity = _runtime_identity(runtime_identity)
 
     def observe(
         self,
@@ -330,6 +359,10 @@ class ApplicationWitness:
         source_fd = -1
         output_fd = -1
         try:
+            try:
+                runtime_identity = _runtime_identity(self.runtime_identity)
+            except ValueError:
+                return _refusal("validation_failure", "configured runtime identity is invalid")
             source = Path(source)
             if artifact_type not in _FORMATS or source.suffix.lower() != _FORMATS[artifact_type]:
                 return _refusal("validation_failure", "artifact type and suffix must match")
@@ -425,7 +458,8 @@ class ApplicationWitness:
                 "source_unchanged": True,
                 "witness": {
                     "application": "LibreOffice",
-                    "version": "not_observed",
+                    "version": runtime_identity["application_version"],
+                    "runtime_identity": dict(runtime_identity),
                     "claim": "libreoffice_private_clone_observed",
                     "operation": "recalculation_roundtrip" if typed_artifact == "xlsx" else "pdf_render",
                     "process_exit": "pass",

@@ -18,6 +18,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils.cell import get_column_letter, range_boundaries
 
 from .inventory import inspect_inventory
+from .preservation import PACKAGE_CELL_OPERATIONS, admit_operations
 from .template import (
  has_marker,
  package_has_marker,
@@ -45,7 +46,11 @@ def _parse_xml(payload:bytes):
  return root
 def _sha(path:Path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def _object_sha(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
-def _refusal(reason,details=''):return {'status':'refused','reason':reason,'details':details}
+_REFUSAL_REASONS={'unsupported_capability','ambiguous_target','stale_snapshot','validation_failure','unsafe_plan','conflict'}
+def _typed_reason(exc):
+ value=str(exc)
+ return value if value in _REFUSAL_REASONS else 'validation_failure'
+def _refusal(reason,details=''):return {'status':'refused','reason':reason if reason in _REFUSAL_REASONS else 'validation_failure','details':details}
 def _id(source,sheet,coordinate,kind,value):return 'tx_'+hashlib.sha256(f'{source}|{sheet}|{coordinate}|{kind}|{value!r}'.encode()).hexdigest()[:24]
 def _safe_formula(value):return isinstance(value,str) and value.startswith('=') and len(value)<=32767 and not _FORMULA_EXTERNAL.search(value) and not _FORMULA_DDE.search(value)
 def _scalar(value):return value is None or isinstance(value,(str,bool,int)) or isinstance(value,float) and math.isfinite(value)
@@ -112,6 +117,53 @@ def _package_set_values(source:Path,candidate:Path,changes:list[tuple[str,str,st
   with zipfile.ZipFile(candidate,'w') as output:
    for info in archive.infolist():output.writestr(copy.copy(info),replacements.get(info.filename,archive.read(info.filename)))
 
+def _package_edit_cells(source:Path,candidate:Path,changes:list[tuple[str,str,str,Any]]):
+ ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';styled=None;workbook=None
+ try:
+  roots={};members={sheet:_sheet_member(source,sheet) for sheet,_,_,_ in changes}
+  with zipfile.ZipFile(source) as archive:
+   for member in set(members.values()):roots[member]=etree.fromstring(archive.read(member))
+  style_changes=[item for item in changes if item[2]=='style']
+  style_payload=None
+  if style_changes:
+   fd,name=tempfile.mkstemp(prefix='.style-proof.',suffix='.xlsx',dir=candidate.parent);os.close(fd);styled=Path(name)
+   workbook=load_workbook(source,data_only=False)
+   for sheet,coordinate,_,style in style_changes:_apply_style(workbook[sheet][coordinate],style)
+   workbook.save(styled);workbook.close();workbook=None
+   with zipfile.ZipFile(styled) as generated:
+    style_payload=generated.read('xl/styles.xml')
+    for sheet,coordinate,_,_ in style_changes:
+     member=members[sheet];generated_root=etree.fromstring(generated.read(member))
+     generated_cells=generated_root.xpath(".//m:c[@r=$coordinate]",namespaces={'m':ns},coordinate=coordinate)
+     original_cells=roots[member].xpath(".//m:c[@r=$coordinate]",namespaces={'m':ns},coordinate=coordinate)
+     if len(generated_cells)!=1 or len(original_cells)!=1:raise ValueError('ambiguous_target')
+     style_id=generated_cells[0].get('s')
+     if style_id is None:original_cells[0].attrib.pop('s',None)
+     else:original_cells[0].set('s',style_id)
+  for sheet,coordinate,action,value in changes:
+   if action=='style':continue
+   member=members[sheet];cells=roots[member].xpath(".//m:c[@r=$coordinate]",namespaces={'m':ns},coordinate=coordinate)
+   if len(cells)!=1:raise ValueError('ambiguous_target')
+   cell=cells[0]
+   for child in list(cell):
+    if child.tag in {f'{{{ns}}}v',f'{{{ns}}}f',f'{{{ns}}}is'}:cell.remove(child)
+   cell.attrib.pop('t',None)
+   if action=='formula':
+    formula=etree.SubElement(cell,f'{{{ns}}}f');formula.text=value[1:];continue
+   if value is None:continue
+   if isinstance(value,bool):cell.set('t','b');node=etree.SubElement(cell,f'{{{ns}}}v');node.text='1' if value else '0'
+   elif isinstance(value,(int,float)):node=etree.SubElement(cell,f'{{{ns}}}v');node.text=str(value)
+   else:
+    cell.set('t','inlineStr');inline=etree.SubElement(cell,f'{{{ns}}}is');text=etree.SubElement(inline,f'{{{ns}}}t');text.text=value
+    if value[:1].isspace() or value[-1:].isspace():text.set('{http://www.w3.org/XML/1998/namespace}space','preserve')
+  replacements={member:etree.tostring(root,xml_declaration=True,encoding='UTF-8',standalone=True) for member,root in roots.items()}
+  if style_payload is not None:replacements['xl/styles.xml']=style_payload
+  with zipfile.ZipFile(source) as archive,zipfile.ZipFile(candidate,'w') as output:
+   for info in archive.infolist():output.writestr(copy.copy(info),replacements.get(info.filename,archive.read(info.filename)))
+ finally:
+  if workbook is not None:workbook.close()
+  if styled is not None:styled.unlink(missing_ok=True)
+
 def _publish(output:Path,build,check):
  output.parent.mkdir(parents=True,exist_ok=True);fd,name=tempfile.mkstemp(prefix='.'+output.name+'.candidate.',suffix='.xlsx',dir=output.parent);os.close(fd);candidate=Path(name)
  try:build(candidate);check(candidate);os.replace(candidate,output)
@@ -124,6 +176,21 @@ def _restore_members(source:Path,candidate:Path,names:set[str]):
    for info in current.infolist():output.writestr(copy.copy(info),original.read(info.filename) if info.filename in names and info.filename in original_names else current.read(info.filename))
   os.replace(rewritten,candidate)
  finally:rewritten.unlink(missing_ok=True)
+
+def _restore_outside_allowlist(source:Path,candidate:Path,allowlist:set[str]):
+ fd,name=tempfile.mkstemp(prefix='.'+candidate.name+'.preserve.',suffix='.xlsx',dir=candidate.parent);os.close(fd);rewritten=Path(name)
+ try:
+  with zipfile.ZipFile(source) as original,zipfile.ZipFile(candidate) as current,zipfile.ZipFile(rewritten,'w') as output:
+   if set(original.namelist())!=set(current.namelist()) or not allowlist<=set(current.namelist()):raise ValueError('validation_failure')
+   for info in original.infolist():output.writestr(copy.copy(info),current.read(info.filename) if info.filename in allowlist else original.read(info.filename))
+  os.replace(rewritten,candidate)
+ finally:rewritten.unlink(missing_ok=True)
+
+def _check_package_allowlist(source:Path,candidate:Path,allowlist:set[str]):
+ with zipfile.ZipFile(source) as original,zipfile.ZipFile(candidate) as current:
+  if set(original.namelist())!=set(current.namelist()):raise ValueError('validation_failure')
+  for name in original.namelist():
+   if name not in allowlist and original.read(name)!=current.read(name):raise ValueError('validation_failure')
 
 def _apply_style(cell,name):
  if name not in _STYLES:raise ValueError('unsupported_style')
@@ -221,7 +288,7 @@ class XlsxArtifactTool:
       if sheet.row_dimensions[int(row)].height!=height:raise ValueError('validation_failure')
     workbook.close()
    _publish(output,build,check_created);return {'status':'ok','sha256':_sha(output)}
-  except ValueError as exc:return _refusal(str(exc))
+  except ValueError as exc:return _refusal(_typed_reason(exc))
   except Exception as exc:return _refusal('validation_failure',str(exc))
  def inspect(self,source:Path|str,view='region',sheet=None,range_ref=None,query=None,**kwargs):
   try:
@@ -319,7 +386,7 @@ class XlsxArtifactTool:
     else:raise ValueError('unsupported_capability')
     resolved.update({'sheet':target['sheet'],'coordinate':target['coordinate'],'old_kind':target['kind'],'old_value':target.get('value',target.get('formula'))});ops.append(resolved)
    plan={'schema':1,'source_sha256':snapshot['source_sha256'],'snapshot_sha256':snapshot['snapshot_sha256'],'operations':ops};plan['plan_sha256']=_object_sha(plan);return {'status':'ok','plan':plan}
-  except ValueError as exc:return _refusal(str(exc))
+  except ValueError as exc:return _refusal(_typed_reason(exc))
   except Exception as exc:return _refusal('validation_failure',str(exc))
  def apply(self,source:Path|str,plan:dict[str,Any],output:Path|str):
   source=Path(source);output=Path(output);source_snapshot=None
@@ -335,11 +402,10 @@ class XlsxArtifactTool:
     source_snapshot.unlink(missing_ok=True);raise
    _admit(source_snapshot);source=source_snapshot
    inventory=inspect_inventory(source)
-   if inventory['mutation_policy']['decision']=='refuse_mutation':raise ValueError('unsupported_capability')
-   package_safe_types={'set_cell_value','set_cell_formula'}
    if not isinstance(plan,dict) or set(plan)!={'schema','source_sha256','snapshot_sha256','operations','plan_sha256'} or not isinstance(plan.get('operations'),list) or not plan['operations']:raise ValueError('validation_failure')
-   package_preserving=all(isinstance(op,dict) and op.get('type') in package_safe_types for op in plan['operations'])
-   if inventory['mutation_policy']['warnings'] and not package_preserving:raise ValueError('unsupported_capability')
+   package_preserving=all(isinstance(op,dict) and op.get('type') in PACKAGE_CELL_OPERATIONS for op in plan['operations'])
+   admission=admit_operations(inventory,plan['operations'])
+   if not admission['supported']:raise ValueError('unsupported_capability')
    if len(plan['operations'])>1000:raise ValueError('unsafe_plan')
    structural_regions=[op.get('region_id') for op in plan['operations'] if isinstance(op,dict) and op.get('type') in {'append_rows','reorder_rows'}]
    if len(structural_regions)!=len(set(structural_regions)):raise ValueError('conflict')
@@ -391,9 +457,12 @@ class XlsxArtifactTool:
      action=('style',op['style'])
     else:raise ValueError('unsupported_capability')
     prepared.append((cell,action,op['sheet'],op['coordinate']))
+   affected_sheets={sheet for _,_,sheet,_ in prepared}|{ws.title for ws,_,_,_,_,_ in row_appends}|{ws.title for ws,_,_,_,_,_ in row_reorders}
+   allowlist={_sheet_member(source,sheet) for sheet in affected_sheets}
+   if any(action=='style' for _,(action,_),_,_ in prepared):allowlist.add('xl/styles.xml')
    def build(path):
     if package_preserving:
-     _package_set_values(source,path,[(sheet,coordinate,action,value) for _,(action,value),sheet,coordinate in prepared]);return
+     _package_edit_cells(source,path,[(sheet,coordinate,action,value) for _,(action,value),sheet,coordinate in prepared]);return
     for cell,(action,value),_,_ in prepared:
      if action in {'value','formula'}:cell.value=value
      else:_apply_style(cell,value)
@@ -413,9 +482,9 @@ class XlsxArtifactTool:
        target=ws.cell(target_row,min_col+offset);target.value=source_cell.value
        if source_cell.has_style:target._style=copy.copy(source_cell._style)
        target.number_format=source_cell.number_format;target.hyperlink=copy.copy(source_cell.hyperlink);target.comment=copy.copy(source_cell.comment)
-    wb.save(path);_restore_members(source,path,{'docProps/core.xml'})
+    wb.save(path);_restore_outside_allowlist(source,path,allowlist)
    def check_candidate(candidate):
-    _admit(candidate);after=load_workbook(candidate,data_only=False)
+    _admit(candidate);_check_package_allowlist(source,candidate,allowlist);after=load_workbook(candidate,data_only=False)
     reordered_coordinates=set();update_values={(s,c):value for _,(action,value),s,c in prepared if action in {'value','formula'}}
     for ws,min_col,max_col,max_row,template,rows_to_add in row_appends:
      for offset,row_values in enumerate(rows_to_add,1):
@@ -435,7 +504,7 @@ class XlsxArtifactTool:
      if action=='style' and not _style_matches(cell,value):raise ValueError('validation_failure')
    _publish(output,build,check_candidate)
    return {'status':'ok','sha256':_sha(output),'changed_cells':[f'{s}!{c}' for _,_,s,c in prepared],'changed_regions':len(row_reorders)+len(row_appends),'formula_recalculation':'required' if formula_changed else 'not_required'}
-  except (ValueError,KeyError,TypeError,zipfile.BadZipFile) as exc:return _refusal(str(exc))
+  except (ValueError,KeyError,TypeError,zipfile.BadZipFile) as exc:return _refusal(_typed_reason(exc))
   except Exception as exc:return _refusal('validation_failure',str(exc))
   finally:
    if source_snapshot is not None:source_snapshot.unlink(missing_ok=True)
@@ -477,7 +546,7 @@ class XlsxArtifactTool:
    finally:after.close()
    if package_has_marker(candidate):raise ValueError('validation_failure')
    os.replace(candidate,output);candidate=None;applied['output']=str(output);applied['template']={'strict':True,'keys':sorted(required),'resolved_targets':len(targets)};return applied
-  except ValueError as exc:return _refusal(str(exc))
+  except ValueError as exc:return _refusal(_typed_reason(exc))
   except (KeyError,TypeError,zipfile.BadZipFile):return _refusal('validation_failure')
   finally:
    if workbook is not None:workbook.close()

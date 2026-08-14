@@ -1,25 +1,24 @@
 # Quality gates
 
-## v0.2.0 bounded evidence
+## v0.3.0 bounded evidence
 
 | Domain | Local suite | Independent exact-tree gate | Application evidence |
 |---|---:|---|---|
-| DOCX | 49/49 | required before tag | fake-soffice contract only |
-| XLSX | 51/51 | required before tag | fake-soffice contract only |
-| PPTX editor | 36/36 | required before tag | fake-soffice contract only |
+| DOCX | 56/56 | required before tag | preservation matrix + fake-soffice contract |
+| XLSX | 59/59 | required before tag | preservation matrix + hermetic cached-value gate |
+| PPTX editor | 44/44 | required before tag | preservation matrix + fake-soffice contract |
 | PPTX composer | 66/66 | unchanged creation-first domain | structural preview only |
-| Application Witness | 24/24 | required before tag | hermetic fake executable |
-| Repository integration | 15/15 | required before tag | N/A |
+| Application Witness | 28/28 | required before tag | hermetic fake executable |
+| Repository integration | 30/30 | required before tag | manual workflow contract only |
 
-Current local total: **241/241 tests passed**. The repository CI reruns the packaged source rather than trusting these counts.
+Current local total: **282/282 tests passed**. The repository CI reruns the packaged source rather than trusting these counts.
 
-Distribution evidence:
+Distribution evidence for the v0.3.0 candidate:
 
 - wheel and sdist built into an external temporary directory from the candidate tree;
-- fail-closed verifier passed with 63 wheel members and 175 sdist members;
-- clean external venv installed `kwentin-office==0.2.0` from the wheel;
-- all five console scripts, three packaged inventory schemas, domain imports and clone-only Witness smoke passed;
-- new v0.2.0 modules pass Ruff and compileall;
+- fail-closed verifier passed with 64 wheel members and 187 sdist members;
+- all five console scripts, three packaged inventory schemas, domain imports and clone-only Witness remain required by the verifier;
+- changed/new v0.3.0 modules pass targeted Ruff and repository-wide compileall;
 - whole-repository Ruff remains historical style debt and is not a CI/release gate for this bounded feature release.
 
 ## What a local PASS means
@@ -31,17 +30,23 @@ Distribution evidence:
 - bounded package admission;
 - tested semantic postconditions;
 - source remains unchanged in tested flows;
-- Rich Inspect is a bounded inventory of listed features, not a complete OOXML parser;
+- Rich Inspect schema v2 provides bounded, deterministic, format-local locations for listed features;
+- package-global macros, signatures, protection, ActiveX and OLE remain global blockers;
+- preservation matrices prove exact non-target archive-member equality for the tested same/different-scope flows;
 - Application Witness observes a private clone, deletes its private workspace before success and never publishes its output;
-- the Witness controls paths and process-group lifetime but explicitly does not claim OS sandboxing of the host-pinned executable.
+- runtime identity is closed and host-supplied, not request-controlled;
+- the Witness controls paths and process-group lifetime but explicitly does not claim OS sandboxing of the host-pinned executable;
+- the XLSX semantic gate verifies only declared cached cells with explicit type/tolerance, exact formula preservation and unsupported-formula classification;
+- application-gate cleanup and reported runtime identity are revalidated before a success result.
 
 ## Unexecuted production gates
 
-- real Microsoft Office or LibreOffice open-save-reopen across supported versions;
+- execution of `.github/workflows/libreoffice-compat.yml` on an actual pinned self-hosted LibreOffice runtime;
+- a stable real-LibreOffice evidence series; no nightly schedule is enabled;
+- real Microsoft Office open-save-reopen;
 - repair-dialog detection;
 - pixel/render fidelity and font substitution;
 - Word pagination;
-- verified Excel formula recalculation and compatibility;
 - hostile multi-tenant deployment controls.
 
 Therefore the honest status remains:
@@ -51,4 +56,4 @@ bounded release rule: exact-tree APPROVE and GitHub CI are mandatory before tag
 production compatibility: HOLD until host-specific application gates
 ```
 
-A successful fake-soffice suite proves subprocess lifecycle, private-path handling and reporting contracts only. It is not OS-sandbox or application-compatibility evidence and never implies Microsoft Office equivalence.
+A successful fake-soffice or fake-recalculation suite proves subprocess lifecycle, private-path handling, declared cached-value comparison and reporting contracts only. It is not OS-sandbox or real application-compatibility evidence and never implies Microsoft Office equivalence.

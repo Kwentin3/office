@@ -166,6 +166,48 @@ class ApplicationWitnessTests(unittest.TestCase):
         self.assertEqual(result["witness"]["operation"], "recalculation_roundtrip")
         self.assertEqual(result["witness"]["formula_recalculation"], "requested_not_semantically_verified")
 
+    def test_host_supplied_runtime_identity_is_bounded_and_reported(self) -> None:
+        source = self.root / "source.docx"
+        Document().save(source)
+        identity = {
+            "application_version": "LibreOffice 24.2.7.2",
+            "image_digest": "sha256:" + "a" * 64,
+        }
+        result = ApplicationWitness(
+            self.work,
+            executable=self.fake,
+            runtime_identity=identity,
+        ).observe(source, "docx", timeout_seconds=5)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["witness"]["runtime_identity"], identity)
+        self.assertEqual(result["witness"]["version"], "LibreOffice 24.2.7.2")
+
+    def test_runtime_identity_is_closed_and_validated_before_use(self) -> None:
+        invalid = (
+            {},
+            {"application_version": "LibreOffice 24.2", "image_digest": "latest"},
+            {"application_version": "x" * 129, "image_digest": "sha256:" + "a" * 64},
+            {"application_version": "LibreOffice 24.2", "image_digest": "sha256:" + "a" * 64, "extra": "x"},
+        )
+        for identity in invalid:
+            with self.subTest(identity=identity), self.assertRaises(ValueError):
+                ApplicationWitness(self.work, executable=self.fake, runtime_identity=identity)
+
+    def test_runtime_identity_mutation_after_construction_is_refused(self) -> None:
+        source = self.root / "source.docx"
+        Document().save(source)
+        witness = ApplicationWitness(
+            self.work,
+            executable=self.fake,
+            runtime_identity={
+                "application_version": "LibreOffice 24.2.7.2",
+                "image_digest": "sha256:" + "a" * 64,
+            },
+        )
+        witness.runtime_identity["image_digest"] = "latest"
+        result = witness.observe(source, "docx", timeout_seconds=5)
+        self.assertEqual((result["status"], result["reason"]), ("refused", "validation_failure"))
+
     def test_source_symlink_is_refused(self) -> None:
         source = self.root / "source.docx"
         Document().save(source)
@@ -268,9 +310,10 @@ class ApplicationWitnessTests(unittest.TestCase):
         changed = mock.Mock(wraps=initial)
         changed.st_mtime_ns = initial.st_mtime_ns + 1
         directory = output.parent.stat()
-        with mock.patch("office_application_witness.api.os.fstat", side_effect=[directory, initial, changed]):
-            with self.assertRaisesRegex(ValueError, "stable"):
-                _inspect_output(output, "docx")
+        with mock.patch(
+            "office_application_witness.api.os.fstat", side_effect=[directory, initial, changed]
+        ), self.assertRaisesRegex(ValueError, "stable"):
+            _inspect_output(output, "docx")
 
     def test_timeout_kills_spawned_process_group(self) -> None:
         source = self.root / "source.docx"
@@ -373,6 +416,39 @@ class ApplicationWitnessTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(json.loads(completed.stdout)["status"], "ok")
+
+    def test_json_request_cannot_override_host_runtime_identity(self) -> None:
+        source = self.root / "source.docx"
+        Document().save(source)
+        request = {
+            "source": str(source),
+            "artifact_type": "docx",
+            "runtime_identity": {
+                "application_version": "attacker-selected",
+                "image_digest": "sha256:" + "0" * 64,
+            },
+        }
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "office_application_witness",
+                "--workdir",
+                str(self.work),
+                "--executable",
+                str(self.fake),
+                "--runtime-version",
+                "LibreOffice Fake 1.0",
+                "--runtime-image-digest",
+                "sha256:" + "a" * 64,
+            ],
+            input=json.dumps(request),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(json.loads(completed.stdout)["reason"], "validation_failure")
 
     def test_cli_filesystem_configuration_error_is_typed_without_path_leak(self) -> None:
         source = self.root / "source.docx"

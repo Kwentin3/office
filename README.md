@@ -19,7 +19,7 @@ closed JSON/Python contract
 From the versioned GitHub archive (works in slim containers without a `git` binary):
 
 ```bash
-python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.2.0.zip"
+python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.3.0.zip"
 ```
 
 For development:
@@ -143,9 +143,9 @@ The bounded implementations pass their local regression suites and independent e
 
 Still required for a strict production sign-off:
 
-- real LibreOffice and Microsoft Word/Excel/PowerPoint application gates (the packaged witness contract is hermetically tested, but LibreOffice is not installed by this package);
+- execution of the manual self-hosted LibreOffice application gate on a host-pinned runtime (the gate and its hermetic contract tests ship, but LibreOffice is not installed by this package);
 - renderer-based visual regression and font-substitution checks;
-- Excel/LibreOffice formula recalculation;
+- real Excel/LibreOffice formula recalculation evidence from the declared cached-value gate;
 - multi-tenant host sandboxing and retention policy.
 
 See [quality gates](docs/quality-gates.md).

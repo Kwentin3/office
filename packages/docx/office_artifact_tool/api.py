@@ -15,7 +15,7 @@ from .core.semantic import semantic_postconditions
 from .core.transaction import atomic_candidate
 from .core.validation import validate_package
 from .docx.inspect import inspect_docx
-from .docx.inventory import inspect_inventory
+from .docx.inventory import inspect_inventory, mutation_blockers_for_story_parts
 from .docx.mutation import mutate
 from .docx.renderer import render
 from .docx.template import (
@@ -89,10 +89,17 @@ class DocxArtifactTool:
             source=source_snapshot
             source_hash=file_sha256(source)
             inventory=inspect_inventory(source)
-            if inventory['mutation_policy']['decision']=='refuse_mutation':return refusal('unsupported_capability',{'blockers':inventory['mutation_policy']['blockers']})
             if plan.get('source_sha256')!=source_hash:return refusal('stale_snapshot','source fingerprint changed')
             if plan.get('plan_sha256')!=object_sha256({k:v for k,v in plan.items() if k!='plan_sha256'}):return refusal('validation_failure','plan fingerprint mismatch')
             before=self.inspect(source)
+            elements={item['id']:item for item in before.get('elements',[]) if isinstance(item,dict) and isinstance(item.get('id'),str)}
+            target_parts=set()
+            for operation in operations:
+                identity=operation.get('table_id') if operation.get('type')=='reorder_rows' else operation.get('target_id')
+                part=elements.get(identity,{}).get('story_part')
+                if isinstance(part,str):target_parts.add(part)
+            blockers=mutation_blockers_for_story_parts(inventory,target_parts)
+            if blockers:return refusal('unsupported_capability',{'blockers':blockers,'target_parts':sorted(target_parts)})
             def build(candidate):
                 result=mutate(source,plan,candidate)
                 if result.get('status')=='refused':raise ArtifactError(result['reason'],result['details'])
