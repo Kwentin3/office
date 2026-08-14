@@ -1,11 +1,12 @@
 from __future__ import annotations
-import json,subprocess,tempfile,unittest
+import json,os,subprocess,sys,tempfile,unittest
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1];PY='/workspace/.venv-docx-study/bin/python'
+ROOT=Path(__file__).resolve().parents[1];PY=sys.executable
 class CliTests(unittest.TestCase):
  def call(self,payload):
-  proc=subprocess.run([PY,'-m','xlsx_artifact_tool'],input=json.dumps(payload,ensure_ascii=False),text=True,capture_output=True,cwd=ROOT,env={'PYTHONPATH':str(ROOT)});self.assertEqual(proc.returncode,0,proc.stderr);return json.loads(proc.stdout)
+  env=os.environ.copy();env['PYTHONPATH']=str(ROOT)
+  proc=subprocess.run([PY,'-m','xlsx_artifact_tool'],input=json.dumps(payload,ensure_ascii=False),text=True,capture_output=True,cwd=ROOT,env=env);self.assertEqual(proc.returncode,0,proc.stderr);return json.loads(proc.stdout)
  def test_json_cli_create_inspect_plan_apply_validate(self):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);src=root/'source.xlsx';out=root/'output.xlsx'

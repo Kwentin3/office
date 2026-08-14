@@ -1,10 +1,21 @@
 import json
+import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from tests.fixtures import valid_deck_spec
+
+ROOT = Path(__file__).resolve().parents[1]
+PYTHON = sys.executable
+
+
+def cli_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(ROOT)
+    return environment
 
 
 class JsonCliTests(unittest.TestCase):
@@ -16,15 +27,15 @@ class JsonCliTests(unittest.TestCase):
             spec_path.write_text(json.dumps(valid_deck_spec()), encoding="utf-8")
             render = subprocess.run(
                 [
-                    "/workspace/.venv-docx-study/bin/python",
+                    PYTHON,
                     "-m",
                     "pptx_ai_composer",
                 ],
                 input=json.dumps({"action": "render", "spec": str(spec_path), "output": str(output)}) + "\n",
                 text=True,
                 capture_output=True,
-                cwd="/workspace/pptx-ai-composer",
-                env={"PYTHONPATH": "."},
+                cwd=ROOT,
+                env=cli_environment(),
                 check=False,
             )
             self.assertEqual(render.returncode, 0, render.stderr)
@@ -33,12 +44,12 @@ class JsonCliTests(unittest.TestCase):
             self.assertTrue(output.exists())
 
             validate = subprocess.run(
-                ["/workspace/.venv-docx-study/bin/python", "-m", "pptx_ai_composer"],
+                [PYTHON, "-m", "pptx_ai_composer"],
                 input=json.dumps({"action": "validate", "spec": str(spec_path), "source": str(output)}) + "\n",
                 text=True,
                 capture_output=True,
-                cwd="/workspace/pptx-ai-composer",
-                env={"PYTHONPATH": "."},
+                cwd=ROOT,
+                env=cli_environment(),
                 check=False,
             )
             self.assertEqual(validate.returncode, 0, validate.stderr)
@@ -52,24 +63,24 @@ class JsonCliTests(unittest.TestCase):
             preview_path = root / "preview"
             spec_path.write_text(json.dumps(valid_deck_spec()), encoding="utf-8")
             preview = subprocess.run(
-                ["/workspace/.venv-docx-study/bin/python", "-m", "pptx_ai_composer"],
+                [PYTHON, "-m", "pptx_ai_composer"],
                 input=json.dumps({"action": "preview", "spec": str(spec_path), "output": str(preview_path)}) + "\n",
                 text=True,
                 capture_output=True,
-                cwd="/workspace/pptx-ai-composer",
-                env={"PYTHONPATH": "."},
+                cwd=ROOT,
+                env=cli_environment(),
                 check=False,
             )
             self.assertEqual(preview.returncode, 0, preview.stderr)
             self.assertEqual(json.loads(preview.stdout)["status"], "previewed")
             self.assertTrue((preview_path / "manifest.json").exists())
             catalog = subprocess.run(
-                ["/workspace/.venv-docx-study/bin/python", "-m", "pptx_ai_composer"],
+                [PYTHON, "-m", "pptx_ai_composer"],
                 input=json.dumps({"action": "catalog"}) + "\n",
                 text=True,
                 capture_output=True,
-                cwd="/workspace/pptx-ai-composer",
-                env={"PYTHONPATH": "."},
+                cwd=ROOT,
+                env=cli_environment(),
                 check=False,
             )
             self.assertEqual(catalog.returncode, 0, catalog.stderr)
@@ -84,7 +95,7 @@ class JsonCliTests(unittest.TestCase):
             preview_path = root / "preview"
             spec_path.write_text(json.dumps(valid_deck_spec()), encoding="utf-8")
             result = subprocess.run(
-                ["/workspace/.venv-docx-study/bin/python", "-m", "pptx_ai_composer"],
+                [PYTHON, "-m", "pptx_ai_composer"],
                 input=json.dumps({
                     "action": "preview",
                     "spec": str(spec_path),
@@ -94,8 +105,8 @@ class JsonCliTests(unittest.TestCase):
                 }) + "\n",
                 text=True,
                 capture_output=True,
-                cwd="/workspace/pptx-ai-composer",
-                env={"PYTHONPATH": "."},
+                cwd=ROOT,
+                env=cli_environment(),
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -105,12 +116,12 @@ class JsonCliTests(unittest.TestCase):
 
     def test_cli_returns_typed_error_for_unknown_action(self):
         result = subprocess.run(
-            ["/workspace/.venv-docx-study/bin/python", "-m", "pptx_ai_composer"],
+            [PYTHON, "-m", "pptx_ai_composer"],
             input=json.dumps({"action": "explode"}) + "\n",
             text=True,
             capture_output=True,
-            cwd="/workspace/pptx-ai-composer",
-            env={"PYTHONPATH": "."},
+            cwd=ROOT,
+            env=cli_environment(),
             check=False,
         )
         self.assertEqual(result.returncode, 2)
