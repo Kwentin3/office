@@ -2,6 +2,16 @@
 
 All notable changes will be documented here.
 
+## 0.2.0 — 2026-08-14
+
+- Added format-specific Rich Inspect inventories and mutation policy decisions for DOCX, XLSX, and PPTX.
+- Added strict `{{token}}` template compilation through each format's existing closed plan/apply pipeline.
+- Added clone-only `office_application_witness` with fixed argv, private profile, timeout, bounded output validation, cleanup, and typed reports.
+- Kept LibreOffice optional and externally supplied; CI validates the operational contract with a hermetic fake executable and does not claim real Office compatibility.
+- Added the `office-witness` CLI while preserving document-domain isolation.
+- Hardened strict templates against malformed markers, post-render overflow, unsupported package scopes and collateral run/paragraph loss.
+- Made the Witness trust boundary explicit: cleanup failure refuses success, while the host-pinned executable remains outside an OS sandbox claim.
+
 ## 0.1.0 — 2026-08-13
 
 - Initial public packaging of four isolated bounded Office domains.

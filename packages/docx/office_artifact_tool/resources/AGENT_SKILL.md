@@ -81,3 +81,7 @@ Stop on a tool refusal with one of the same reasons. Never guess a target, reuse
 ## Limits
 
 DOCX only. Images, comments, tracked changes, fields, macros, embedded objects, arbitrary style creation, application compatibility, pagination, and visual fidelity are unsupported/not verified.
+
+## Rich Inspect and strict templates
+
+Before mutation, call `inspect(source, view="inventory")`. Stop when `mutation_policy.decision` is `refuse_mutation`; do not bypass it with a forged plan. For exact `{{token}}` filling, the host may call `fill_template(source, values, output, strict=True)`. Keys must exactly match tokens in supported DOCX paragraphs, table cells, headers, and footers.

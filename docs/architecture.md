@@ -18,6 +18,7 @@ packages/
   xlsx/           workbook/sheet/region/row/cell/formula domain
   pptx-editor/    template/slide/slot/table-cell domain
   pptx-composer/  DeckSpec → SceneSpec → isolated render/preview backends
+  application-witness/ private clone → configured application → typed observation
 
 docs/             host and integration documentation
 examples/         provider-neutral integration and artifact examples
@@ -76,6 +77,10 @@ DeckSpec
 ```
 
 `SceneSpec` is private to this creation-first PPTX domain.
+
+### Application witness
+
+The witness is an OS/application boundary, not a shared Office model. It knows only the closed artifact type, file suffix, subprocess policy, and output validation. It receives no mutation plan and cannot publish a document. Rich Inspect and strict template compilers remain inside their format packages.
 
 ## Host responsibilities
 

@@ -12,6 +12,7 @@ def main():
   elif action=='inspect':result=tool.inspect(Path(payload['source']),view=payload.get('view','summary'),sheet=payload.get('sheet'),range_ref=payload.get('range'),query=payload.get('query'))
   elif action=='plan':result=tool.plan(payload['snapshot'],payload['request'])
   elif action=='apply':result=tool.apply(Path(payload['source']),payload['plan'],Path(payload['output']))
+  elif action=='fill_template':result=tool.fill_template(Path(payload['source']),payload['values'],Path(payload['output']),strict=payload.get('strict',True))
   elif action=='validate':result=tool.validate(Path(payload['source']),before=Path(payload['before']) if payload.get('before') else None)
   else:result=_refusal('unsupported_capability')
  except (KeyError,TypeError,ValueError,json.JSONDecodeError):result=_refusal('validation_failure')

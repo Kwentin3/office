@@ -18,6 +18,7 @@ from pathlib import Path
 from office_artifact_tool import DocxArtifactTool
 from pptx_artifact_tool import PptxArtifactTool
 from xlsx_artifact_tool import XlsxArtifactTool
+from office_application_witness import ApplicationWitness
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _ALLOWED_SUFFIXES = {".docx", ".xlsx", ".pptx"}
@@ -175,3 +176,13 @@ class OfficeService:
 
     def pptx_editor(self, request_id: str) -> PptxArtifactTool:
         return PptxArtifactTool(self._domain_workdir(request_id, "pptx-editor"))
+
+    def application_witness(self, request_id: str, executable: str | Path) -> ApplicationWitness:
+        """Return a clone-only observer with an absolute host-pinned executable."""
+        configured = Path(executable)
+        if not configured.is_absolute():
+            raise ValueError("witness executable must be an absolute host path")
+        return ApplicationWitness(
+            self._domain_workdir(request_id, "application-witness"),
+            executable=configured,
+        )

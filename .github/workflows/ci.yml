@@ -34,4 +34,10 @@ jobs:
           python -m venv /tmp/office-wheel
           cd /tmp
           /tmp/office-wheel/bin/python -m pip install --force-reinstall "$GITHUB_WORKSPACE"/dist/*.whl
-          /tmp/office-wheel/bin/python -c "import office_artifact_tool, xlsx_artifact_tool, pptx_artifact_tool, pptx_ai_composer"
+          /tmp/office-wheel/bin/python -c "import importlib.metadata as m, importlib.resources as r; import office_artifact_tool, xlsx_artifact_tool, pptx_artifact_tool, pptx_ai_composer, office_application_witness; assert m.version('kwentin-office') == '0.2.0'; assert len([x for x in m.entry_points(group='console_scripts') if x.name.startswith('office-')]) == 5; assert r.files('office_artifact_tool').joinpath('resources/inventory.schema.json').is_file(); assert r.files('xlsx_artifact_tool').joinpath('resources/inventory.schema.json').is_file(); assert r.files('pptx_artifact_tool').joinpath('resources/inventory.schema.json').is_file()"
+          /tmp/office-wheel/bin/office-docx --help >/tmp/office-docx.txt
+          printf '{"action":"unsupported"}\n' | /tmp/office-wheel/bin/office-xlsx >/tmp/office-xlsx.json
+          printf '{"action":"unsupported"}\n' | /tmp/office-wheel/bin/office-pptx-edit >/tmp/office-pptx-edit.json
+          printf '{"action":"unsupported"}\n' | /tmp/office-wheel/bin/office-pptx-compose >/tmp/office-pptx-compose.json || test "$?" -eq 2
+          printf '{}\n' | /tmp/office-wheel/bin/office-witness --workdir /tmp/office-witness-work --executable /bin/false >/tmp/office-witness.json || test "$?" -eq 2
+          /tmp/office-wheel/bin/python -c "import json; paths=['/tmp/office-xlsx.json','/tmp/office-pptx-edit.json','/tmp/office-pptx-compose.json','/tmp/office-witness.json']; results=[json.load(open(path)) for path in paths]; assert all(result.get('status') in {'refused','error'} for result in results)"

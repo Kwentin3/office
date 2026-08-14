@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "artifact_type",
+    "view",
+    "source_sha256",
+    "features",
+    "mutation_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "status": {
+      "const": "ok"
+    },
+    "artifact_type": {
+      "const": "pptx"
+    },
+    "view": {
+      "const": "inventory"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slides",
+        "managed_slots",
+        "duplicate_slot_keys",
+        "group_shapes",
+        "table_shapes",
+        "charts",
+        "smartart",
+        "media",
+        "speaker_notes",
+        "animations",
+        "transitions",
+        "hyperlinks",
+        "external_relationships",
+        "comments",
+        "embedded_packages",
+        "ole_objects",
+        "activex",
+        "modification_protection",
+        "macros",
+        "signatures"
+      ],
+      "properties": {
+        "slides": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "managed_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duplicate_slot_keys": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "group_shapes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "table_shapes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "charts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "smartart": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "media": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "speaker_notes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "animations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transitions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hyperlinks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "external_relationships": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comments": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "embedded_packages": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ole_objects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modification_protection": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "macros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "signatures": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "mutation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "blockers",
+        "warnings"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "safe",
+            "safe_with_warnings",
+            "refuse_mutation"
+          ]
+        },
+        "blockers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ole_objects",
+              "activex",
+              "modification_protection",
+              "macros",
+              "signatures"
+            ]
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "duplicate_slot_keys",
+              "group_shapes",
+              "charts",
+              "smartart",
+              "media",
+              "speaker_notes",
+              "animations",
+              "transitions",
+              "hyperlinks",
+              "external_relationships",
+              "comments",
+              "embedded_packages"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "safe"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "maxItems": 0
+              },
+              "warnings": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "safe_with_warnings"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "maxItems": 0
+              },
+              "warnings": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "refuse_mutation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

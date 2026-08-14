@@ -1,12 +1,40 @@
 from __future__ import annotations
-import copy,hashlib,json,os,stat,tempfile,zipfile
-from pathlib import Path,PurePosixPath
+
+import copy
+import difflib
+import hashlib
+import json
+import os
+import stat
+import tempfile
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any
+
 from lxml import etree
 from pptx import Presentation
 
+from .inventory import inspect_inventory
+from .template import (
+ has_marker,
+ package_has_marker,
+ token_names,
+ unmanaged_slide_scope_has_marker,
+ unsupported_package_scope_has_marker,
+ validate_values,
+ well_formed,
+)
+from .template import (
+ render as render_tokens,
+)
+
 PML='http://schemas.openxmlformats.org/presentationml/2006/main';DML='http://schemas.openxmlformats.org/drawingml/2006/main';REL='http://schemas.openxmlformats.org/package/2006/relationships';OFFREL='http://schemas.openxmlformats.org/officeDocument/2006/relationships';NS={'p':PML,'a':DML,'r':OFFREL}
 MAX_SLIDES=500;MAX_SLOTS=5000;MAX_TABLE_CELLS=20000
+def _parse_xml(payload:bytes):
+ if b'<!DOCTYPE' in payload or b'<!ENTITY' in payload:raise ValueError('validation_failure')
+ root=etree.fromstring(payload,parser=etree.XMLParser(resolve_entities=False,no_network=True,huge_tree=False));info=root.getroottree().docinfo
+ if info.doctype or info.internalDTD is not None or info.externalDTD is not None:raise ValueError('validation_failure')
+ return root
 def _sha(path:Path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def _obj(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
 def _refuse(reason,details=''):return {'status':'refused','reason':reason,'details':details}
@@ -18,6 +46,9 @@ def _admit(path:Path):
    infos=z.infolist();names=[x.filename for x in infos];total=sum(x.file_size for x in infos);modes=[(x.external_attr>>16)&0xFFFF for x in infos]
    unsafe=not {'[Content_Types].xml','ppt/presentation.xml'}<=set(names) or len(names)!=len(set(names)) or any(n.startswith('/') or '\\' in n or '..' in PurePosixPath(n).parts for n in names) or any(not(i.is_dir() or stat.S_IFMT(m) in (0,stat.S_IFREG)) for i,m in zip(infos,modes)) or len(infos)>10000 or total>128*1024*1024 or any(x.file_size>32*1024*1024 for x in infos)
    if unsafe:raise ValueError
+   for name in names:
+    if name.endswith(('.xml','.rels')):_parse_xml(z.read(name))
+ except etree.XMLSyntaxError as exc:raise ValueError('validation_failure') from exc
  except Exception as exc:raise ValueError('unsafe_package') from exc
 def _source_snapshot(source:Path,workdir:Path):
  source_fd=-1;snapshot=None
@@ -75,9 +106,28 @@ def _summary(source:Path):
  slides=[_slide_payload(source,i,s) for i,s in enumerate(prs.slides)]
  if sum(len(s['slots']) for s in slides)>MAX_SLOTS or sum(len(s['table_cells']) for s in slides)>MAX_TABLE_CELLS:raise ValueError('unsafe_plan')
  summary={'status':'ok','artifact_type':'pptx','view':'summary','source_sha256':_sha(source),'slides':[{k:v for k,v in s.items() if k!='table_cells'} for s in slides]};summary['snapshot_sha256']=_obj({k:v for k,v in summary.items() if k!='status'});return summary
-def _set_text_nodes(shape_element,text):
- nodes=shape_element.xpath('.//a:t',namespaces=NS)
+def _distribute_text(nodes,text):
  if not nodes:raise ValueError('unsupported_capability')
+ joined=''.join(node.text or '' for node in nodes);original=[node.text or '' for node in nodes];offsets=[];cursor=0
+ for value in original:offsets.append((cursor,cursor+len(value)));cursor+=len(value)
+ distributed=['' for _ in nodes]
+ for kind,i1,i2,j1,j2 in difflib.SequenceMatcher(a=joined,b=text,autojunk=False).get_opcodes():
+  if kind=='equal':
+   for index,(start,end) in enumerate(offsets):
+    left=max(start,i1);right=min(end,i2)
+    if left<right:distributed[index]+=joined[left:right]
+  elif kind in {'replace','insert'} and j1<j2:
+   owner=next((index for index,(start,end) in enumerate(offsets) if start<=i1<end),len(nodes)-1)
+   distributed[owner]+=text[j1:j2]
+ for node,value in zip(nodes,distributed):node.text=value
+def _set_text_nodes(shape_element,text):
+ paragraphs=shape_element.xpath('.//a:p',namespaces=NS);parts=text.split('\n')
+ if paragraphs and len(parts)==len(paragraphs):
+  for paragraph,part in zip(paragraphs,parts):_distribute_text(paragraph.xpath('.//a:t',namespaces=NS),part)
+  return
+ nodes=shape_element.xpath('.//a:t',namespaces=NS)
+ if '\n' not in text:
+  _distribute_text(nodes,text);return
  first=nodes[0];run=first.getparent();paragraph=run.getparent();parts=text.split('\n');first.text=parts[0]
  for node in nodes[1:]:node.text=''
  insert_at=paragraph.index(run)+1
@@ -118,7 +168,10 @@ class PptxArtifactTool:
  def __init__(self,workdir:Path|str):self.workdir=Path(workdir);self.workdir.mkdir(parents=True,exist_ok=True)
  def inspect(self,source:Path|str,view='summary',slide_id=None,query=None):
   try:
-   source=Path(source);summary=_summary(source)
+   source=Path(source)
+   if view=='inventory':
+    _admit(source);result=inspect_inventory(source);result['source_sha256']=_sha(source);return result
+   summary=_summary(source)
    if view=='summary':return summary
    prs=Presentation(source);slides=[_slide_payload(source,i,s) for i,s in enumerate(prs.slides)]
    if view=='slide':
@@ -133,7 +186,7 @@ class PptxArtifactTool:
       if query.casefold() in item['text'].casefold():matches.append({'slide_id':s['id'],'slide_index':s['index'],**item})
     return {'status':'ok','artifact_type':'pptx','view':'search','source_sha256':_sha(source),'query':query,'matches':matches[:100],'truncated':len(matches)>100}
    raise ValueError('unsupported_view')
-  except (ValueError,KeyError,TypeError) as exc:return _refuse(str(exc))
+  except (ValueError,KeyError,TypeError,etree.XMLSyntaxError) as exc:return _refuse('validation_failure' if isinstance(exc,etree.XMLSyntaxError) else str(exc))
  def plan(self,snapshot:dict[str,Any],request:dict[str,Any]):
   try:
    if not isinstance(snapshot,dict) or not isinstance(request,dict) or set(request)!={'operations'}:raise ValueError('validation_failure')
@@ -179,6 +232,8 @@ class PptxArtifactTool:
    check=dict(plan);provided=check.pop('plan_sha256')
    if provided!=_obj(check):raise ValueError('validation_failure')
    source_snapshot=_source_snapshot(source,self.workdir);source=source_snapshot;_admit(source)
+   inventory=inspect_inventory(source)
+   if inventory['mutation_policy']['decision']=='refuse_mutation':raise ValueError('unsupported_capability')
    if plan['source_sha256']!=_sha(source):raise ValueError('stale_snapshot')
    current=_summary(source)
    if plan['snapshot_sha256']!=current['snapshot_sha256']:raise ValueError('stale_snapshot')
@@ -224,8 +279,8 @@ class PptxArtifactTool:
      if len(candidates)!=1:raise ValueError('validation_failure')
      shape=candidates[0]
      actual=shape.text if op['type']!='set_table_cell_text' else shape.table.cell(op['row'],op['column']).text
-     expected=op.get('text','').replace('\n','\v')
-     if actual!=expected:raise ValueError('validation_failure')
+     expected=op.get('text','')
+     if actual.replace('\v','\n')!=expected:raise ValueError('validation_failure')
    _publish(output,lambda p:_mutate(source,p,plan['operations']),check_candidate);return {'status':'ok','sha256':_sha(output),'changed_targets':[op['target_id'] for op in plan['operations'] if 'target_id' in op],'slide_order_changed':any(op['type']=='reorder_slides' for op in plan['operations'])}
   except (ValueError,KeyError,TypeError,IndexError,zipfile.BadZipFile) as exc:return _refuse(str(exc))
   finally:
@@ -255,3 +310,45 @@ class PptxArtifactTool:
   except (KeyError,TypeError):return _refuse('ambiguous_target')
   planned=self.plan({'summary':summary,'slides':slides},{'operations':ops})
   return planned if planned.get('status')!='ok' else self.apply(template,planned['plan'],output)
+ def fill_template(self,source:Path|str,values:dict[str,str],output:Path|str,strict:bool=True):
+  source=Path(source);output=Path(output);candidate=None
+  try:
+   if strict is not True:raise ValueError('unsupported_capability')
+   if output.suffix.lower()!='.pptx' or source.resolve()==output.resolve():raise ValueError('unsafe_plan')
+   values=validate_values(values);inventory=self.inspect(source,view='inventory')
+   if inventory.get('status')!='ok':return inventory
+   summary=self.inspect(source,view='summary')
+   if summary.get('status')!='ok':return summary
+   slides=[self.inspect(source,view='slide',slide_id=item['id']) for item in summary['slides']]
+   if any(item.get('status')!='ok' for item in slides):raise ValueError('validation_failure')
+   presentation=Presentation(source)
+   for slide in presentation.slides:
+    for shape in slide.shapes:
+     managed=_slot(shape) is not None
+     if getattr(shape,'has_text_frame',False) and not managed and has_marker(shape.text):raise ValueError('unsupported_capability')
+     if getattr(shape,'has_table',False) and not managed and any(has_marker(cell.text) for row in shape.table.rows for cell in row.cells):raise ValueError('unsupported_capability')
+   slide_members=set(_slide_members(source))
+   if unsupported_package_scope_has_marker(source,slide_members) or unmanaged_slide_scope_has_marker(source,slide_members):raise ValueError('unsupported_capability')
+   targets=[item for slide in slides for item in slide['slots'] if item.get('kind')=='text']+[item for slide in slides for item in slide['table_cells']]
+   texts=[item['text'] for item in targets]
+   if any(has_marker(text) and not well_formed(text) for text in texts):raise ValueError('validation_failure')
+   required=set().union(*(token_names(text) for text in texts)) if texts else set()
+   if not required:raise ValueError('validation_failure')
+   if set(values)!=required:return _refuse('validation_failure',{'missing':sorted(required-set(values)),'unknown':sorted(set(values)-required)})
+   operations=[]
+   for item in targets:
+    if not token_names(item['text']):continue
+    operation={'type':'set_table_cell_text' if 'row' in item else 'set_slot_text','target_id':item['id'],'text':render_tokens(item['text'],values),'expected_text':item['text']}
+    operations.append(operation)
+   planned=self.plan({'summary':summary,'slides':slides},{'operations':operations})
+   if planned.get('status')!='ok':return planned
+   output.parent.mkdir(parents=True,exist_ok=True);fd,name=tempfile.mkstemp(prefix='.'+output.name+'.template.',suffix='.pptx',dir=output.parent);os.close(fd);candidate=Path(name)
+   applied=self.apply(source,planned['plan'],candidate)
+   if applied.get('status')!='ok':return applied
+   after_summary=self.inspect(candidate,view='summary');after_slides=[self.inspect(candidate,view='slide',slide_id=item['id']) for item in after_summary.get('slides',[])]
+   if any(has_marker(item.get('text','')) for slide in after_slides for item in slide.get('slots',[])+slide.get('table_cells',[])) or package_has_marker(candidate):raise ValueError('validation_failure')
+   os.replace(candidate,output);candidate=None;applied['output']=str(output);applied['template']={'strict':True,'keys':sorted(required),'resolved_targets':len(operations),'scope':'managed_slots_and_table_cells'};return applied
+  except ValueError as exc:return _refuse(str(exc))
+  except (KeyError,TypeError,IndexError,zipfile.BadZipFile):return _refuse('validation_failure')
+  finally:
+   if candidate is not None:candidate.unlink(missing_ok=True)

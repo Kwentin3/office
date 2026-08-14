@@ -1,8 +1,26 @@
 from __future__ import annotations
-import hashlib,posixpath,stat,zipfile
-from pathlib import Path,PurePosixPath
+
+import hashlib
+import posixpath
+import stat
+import zipfile
+from pathlib import Path, PurePosixPath
+
 from lxml import etree
+
 from .errors import ArtifactError
+
+_XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
+
+
+def _parse_xml(payload: bytes):
+    if b"<!DOCTYPE" in payload or b"<!ENTITY" in payload:
+        raise ArtifactError("validation_failure", "DTD and entity declarations are forbidden")
+    root = etree.fromstring(payload, parser=_XML_PARSER)
+    document_info = root.getroottree().docinfo
+    if document_info.doctype or document_info.internalDTD is not None or document_info.externalDTD is not None:
+        raise ArtifactError("validation_failure", "DTD and entity declarations are forbidden")
+    return root
 
 PR='http://schemas.openxmlformats.org/package/2006/relationships'
 CT='http://schemas.openxmlformats.org/package/2006/content-types'
@@ -33,15 +51,15 @@ def validate_package(path:Path,before:Path|None=None,expected_changed_members:li
             required={'[Content_Types].xml','_rels/.rels','word/document.xml'}
             if not required<=name_set:raise ArtifactError('validation_failure','required package member missing')
             for name in names:
-                if name.endswith('.xml') or name.endswith('.rels'):etree.fromstring(archive.read(name))
+                if name.endswith('.xml') or name.endswith('.rels'):_parse_xml(archive.read(name))
             relationships_valid=True
             for name in [x for x in names if x.endswith('.rels')]:
-                root=etree.fromstring(archive.read(name));source=_source_for_rels(name)
+                root=_parse_xml(archive.read(name));source=_source_for_rels(name)
                 for rel in root.findall(f'{{{PR}}}Relationship'):
                     if rel.get('TargetMode')=='External':continue
                     target=_resolve(source,rel.get('Target',''))
                     if target not in name_set:relationships_valid=False
-            ct=etree.fromstring(archive.read('[Content_Types].xml'));defaults={x.get('Extension') for x in ct.findall(f'{{{CT}}}Default')};overrides={x.get('PartName','').lstrip('/') for x in ct.findall(f'{{{CT}}}Override')}
+            ct=_parse_xml(archive.read('[Content_Types].xml'));defaults={x.get('Extension') for x in ct.findall(f'{{{CT}}}Default')};overrides={x.get('PartName','').lstrip('/') for x in ct.findall(f'{{{CT}}}Override')}
             def extension(name:str)->str:
                 filename=posixpath.basename(name)
                 return filename.rsplit('.',1)[-1] if '.' in filename else ''

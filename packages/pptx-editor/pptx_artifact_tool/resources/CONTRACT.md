@@ -176,3 +176,7 @@ HOLD:
 - image/chart/SmartArt/media mutation;
 - production/hostile multi-tenant readiness;
 - hidden-input generalization.
+
+## v0.2 bounded additions
+
+`inspect(..., view="inventory")` reports charts, SmartArt, media, notes, animations, hyperlinks, comments, OLE, macros, and signatures. OLE, macros, and signatures block mutation. `fill_template(source, values, output, strict=True)` compiles exact `{{token}}` replacements only for managed `slot:*` text/table targets into existing primitives. Unmanaged tokens and notes refuse.

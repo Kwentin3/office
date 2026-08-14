@@ -22,10 +22,10 @@ The Office package remains provider-agnostic. The Open WebUI layer owns conversa
 Pin a release tag in a slim production image without adding a `git` binary:
 
 ```text
-kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.1.0.zip
+kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.2.0.zip
 ```
 
-For an exact commit, replace `refs/tags/v0.1.0` with its 40-character commit SHA. During local development:
+For an exact commit, replace `refs/tags/v0.2.0` with its 40-character commit SHA. During local development:
 
 ```bash
 python -m pip install -e /path/to/office
@@ -56,13 +56,13 @@ Add the pinned archive dependency to `services/office-artifacts/pyproject.toml`:
 [project]
 requires-python = ">=3.11"
 dependencies = [
-  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.1.0.zip",
+  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.2.0.zip",
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1",
 ]
 ```
 
-Copy or adapt `examples/openwebui_backend/office_service.py` inside the sidecar service layer; do not copy the four Office runtime packages into `corp-openweb-ui`. Keep `openwebui_actions/` thin: it should submit an authenticated sidecar request and register the returned attachment, not perform Office mutation itself.
+Copy or adapt `examples/openwebui_backend/office_service.py` inside the sidecar service layer; do not copy the Office runtime packages into `corp-openweb-ui`. Keep `openwebui_actions/` thin: it should submit an authenticated sidecar request and register the returned attachment, not perform Office mutation itself.
 
 ## Request workspace rules
 
@@ -145,5 +145,6 @@ Tool instances may share installed code, but not request work directories. Use a
 - Run repository suites in the Open WebUI backend image.
 - Configure upload and output limits below or equal to domain limits.
 - Add Word/Excel/PowerPoint or LibreOffice open-save-reopen workers if strict compatibility is required.
+- Pin LibreOffice in the sidecar image before enabling `office-witness`; the Python distribution does not install it.
 - Add Excel recalculation before showing computed formula values.
 - Track output hashes and domain validation results in application audit logs.

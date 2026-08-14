@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "artifact_type",
+    "view",
+    "source_sha256",
+    "features",
+    "mutation_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "status": {
+      "const": "ok"
+    },
+    "artifact_type": {
+      "const": "xlsx"
+    },
+    "view": {
+      "const": "inventory"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_links",
+        "external_relationships",
+        "charts",
+        "pivots",
+        "tables",
+        "comments",
+        "data_validations",
+        "conditional_formatting",
+        "defined_names",
+        "merged_ranges",
+        "formula_cells",
+        "shared_formulas",
+        "array_formulas",
+        "drawings",
+        "connections",
+        "embedded_packages",
+        "ole_objects",
+        "activex",
+        "workbook_protection",
+        "sheet_protection",
+        "macros",
+        "signatures"
+      ],
+      "properties": {
+        "external_links": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "external_relationships": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "charts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pivots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tables": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comments": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data_validations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "conditional_formatting": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "defined_names": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "merged_ranges": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "formula_cells": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shared_formulas": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "array_formulas": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drawings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connections": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "embedded_packages": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ole_objects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "workbook_protection": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sheet_protection": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "macros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "signatures": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "mutation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "blockers",
+        "warnings"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "safe",
+            "safe_with_warnings",
+            "refuse_mutation"
+          ]
+        },
+        "blockers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "external_links",
+              "connections",
+              "ole_objects",
+              "activex",
+              "workbook_protection",
+              "sheet_protection",
+              "macros",
+              "signatures"
+            ]
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "external_relationships",
+              "charts",
+              "pivots",
+              "tables",
+              "comments",
+              "data_validations",
+              "conditional_formatting",
+              "defined_names",
+              "merged_ranges",
+              "shared_formulas",
+              "array_formulas",
+              "drawings",
+              "embedded_packages"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "safe"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "maxItems": 0
+              },
+              "warnings": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "safe_with_warnings"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "maxItems": 0
+              },
+              "warnings": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "refuse_mutation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

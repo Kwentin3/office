@@ -13,6 +13,7 @@ SUITES = (
     ("xlsx", ROOT / "packages" / "xlsx", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]),
     ("pptx-editor", ROOT / "packages" / "pptx-editor", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]),
     ("pptx-composer", ROOT / "packages" / "pptx-composer", ["-m", "unittest", "discover", "-s", "tests", "-t", ".", "-v"]),
+    ("application-witness", ROOT / "packages" / "application-witness", ["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]),
     ("repository-integration", ROOT, ["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]),
 )
 

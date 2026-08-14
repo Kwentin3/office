@@ -61,9 +61,10 @@ class OfficeServicePathSafetyTests(unittest.TestCase):
         service = OfficeService(self.root / "service")
         upload = self.root / "upload.pptx"
         upload.write_bytes(b"opaque upload bytes")
-        with patch.object(MODULE.shutil, "copyfileobj", side_effect=OSError("copy failed")):
-            with self.assertRaisesRegex(OSError, "copy failed"):
-                service.stage_upload("req_3", upload, ".pptx")
+        with patch.object(MODULE.shutil, "copyfileobj", side_effect=OSError("copy failed")), self.assertRaisesRegex(
+            OSError, "copy failed"
+        ):
+            service.stage_upload("req_3", upload, ".pptx")
         self.assertFalse((service.request_root("req_3") / "input/source.pptx").exists())
 
     def test_directory_swap_during_stage_cannot_escape_request_workspace(self) -> None:
@@ -86,11 +87,19 @@ class OfficeServicePathSafetyTests(unittest.TestCase):
                 input_dir.symlink_to(outside, target_is_directory=True)
             return real_open(path, flags, mode, dir_fd=dir_fd)
 
-        with patch.object(MODULE.os, "open", side_effect=racing_open):
-            with self.assertRaisesRegex(ValueError, "workspace changed"):
-                service.stage_upload("req_race", upload, ".docx")
+        with patch.object(MODULE.os, "open", side_effect=racing_open), self.assertRaisesRegex(
+            ValueError, "workspace changed"
+        ):
+            service.stage_upload("req_race", upload, ".docx")
         self.assertFalse((outside / "source.docx").exists())
         self.assertFalse((request / "input-original/source.docx").exists())
+
+    def test_application_witness_requires_absolute_host_executable(self) -> None:
+        service = OfficeService(self.root / "service")
+        with self.assertRaisesRegex(ValueError, "absolute"):
+            service.application_witness("req_witness", "soffice")
+        witness = service.application_witness("req_witness", Path("/bin/false"))
+        self.assertEqual(Path(witness.executable), Path("/bin/false"))
 
 
 if __name__ == "__main__":

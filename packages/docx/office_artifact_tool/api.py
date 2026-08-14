@@ -1,17 +1,35 @@
 from __future__ import annotations
-import json,os,tempfile,time
+
+import json
+import os
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
-from .core.errors import ArtifactError,refusal
-from .core.contracts import validate_create_model,validate_plan_request
-from .core.hashes import file_sha256,object_sha256
+
+from .core.contracts import validate_create_model, validate_plan_request
+from .core.errors import ArtifactError, refusal
+from .core.hashes import file_sha256, object_sha256
 from .core.plans import build_plan
 from .core.semantic import semantic_postconditions
 from .core.transaction import atomic_candidate
 from .core.validation import validate_package
 from .docx.inspect import inspect_docx
+from .docx.inventory import inspect_inventory
 from .docx.mutation import mutate
 from .docx.renderer import render
+from .docx.template import (
+    has_marker,
+    package_has_marker,
+    token_names,
+    unsupported_scope_has_marker,
+    validate_values,
+    well_formed,
+)
+from .docx.template import (
+    render as render_tokens,
+)
+
 
 class DocxArtifactTool:
     def __init__(self,workspace:Path|str):
@@ -28,6 +46,9 @@ class DocxArtifactTool:
     def inspect(self,source:Path|str,view:str='full',query:str|None=None)->dict[str,Any]:
         source=Path(source);start=time.perf_counter()
         try:
+            if view=='inventory':
+                validate_package(source)
+                payload=inspect_inventory(source);payload['source_sha256']=file_sha256(source);return payload
             snap=inspect_docx(source)
             if view=='search':
                 if not isinstance(query,str) or not query:return refusal('validation_failure','query_required')
@@ -67,6 +88,8 @@ class DocxArtifactTool:
         try:
             source=source_snapshot
             source_hash=file_sha256(source)
+            inventory=inspect_inventory(source)
+            if inventory['mutation_policy']['decision']=='refuse_mutation':return refusal('unsupported_capability',{'blockers':inventory['mutation_policy']['blockers']})
             if plan.get('source_sha256')!=source_hash:return refusal('stale_snapshot','source fingerprint changed')
             if plan.get('plan_sha256')!=object_sha256({k:v for k,v in plan.items() if k!='plan_sha256'}):return refusal('validation_failure','plan fingerprint mismatch')
             before=self.inspect(source)
@@ -91,6 +114,43 @@ class DocxArtifactTool:
         except Exception as e:return refusal('validation_failure',str(e))
         finally:
             if source_snapshot is not None:source_snapshot.unlink(missing_ok=True)
+    def fill_template(self,source:Path|str,values:dict[str,str],output:Path|str,strict:bool=True)->dict[str,Any]:
+        source=Path(source);output=Path(output);candidate=None
+        try:
+            if strict is not True:return refusal('unsupported_capability','only strict template mode is supported')
+            if output.suffix.lower()!='.docx' or source.resolve()==output.resolve():return refusal('unsafe_plan','source and output must differ')
+            values=validate_values(values);snapshot=self.inspect(source)
+            if snapshot.get('status')!='ok':return snapshot
+            targets=[item for item in snapshot['elements'] if item.get('kind') in {'paragraph','heading','cell'}]
+            texts=[item.get('text','') for item in targets]
+            if any(has_marker(text) and not well_formed(text) for text in texts):return refusal('validation_failure','malformed template token')
+            supported_parts={story['part'] for story in snapshot.get('stories',{}).values() if isinstance(story,dict) and isinstance(story.get('part'),str)}
+            if unsupported_scope_has_marker(source,supported_parts):return refusal('unsupported_capability','template token outside supported stories')
+            required=set().union(*(token_names(text) for text in texts)) if texts else set()
+            if not required:return refusal('validation_failure','template has no supported tokens')
+            if set(values)!=required:return refusal('validation_failure',{'missing':sorted(required-set(values)),'unknown':sorted(set(values)-required)})
+            operations=[]
+            for item in targets:
+                old=item.get('text','')
+                if not token_names(old):continue
+                new=render_tokens(old,values)
+                if item['kind']=='cell':operations.append({'type':'set_cell_text','target_id':item['id'],'text':new})
+                else:operations.append({'type':'replace_text','target_id':item['id'],'old':old,'new':new})
+            planned=self.plan(snapshot,{'operations':operations})
+            if planned.get('status')!='ok':return planned
+            output.parent.mkdir(parents=True,exist_ok=True)
+            fd,name=tempfile.mkstemp(prefix='.'+output.name+'.template.',suffix='.docx',dir=output.parent);os.close(fd);candidate=Path(name)
+            applied=self.apply(source,planned['plan'],candidate)
+            if applied.get('status')!='ok':return applied
+            after=self.inspect(candidate)
+            if after.get('status')!='ok':return after
+            remaining=[item['id'] for item in after.get('elements',[]) if item.get('kind') in {'paragraph','heading','cell'} and has_marker(item.get('text',''))]
+            if remaining or package_has_marker(candidate):return refusal('validation_failure','unresolved template tokens')
+            os.replace(candidate,output);candidate=None
+            applied['output']=str(output);applied['template']={'strict':True,'keys':sorted(required),'resolved_targets':len(operations)};return applied
+        except (ValueError,KeyError,TypeError):return refusal('validation_failure','invalid template request')
+        finally:
+            if candidate is not None:candidate.unlink(missing_ok=True)
     def validate(self,path:Path|str,before:Path|str|None=None,expectations:dict[str,Any]|None=None)->dict[str,Any]:
         expected=(expectations or {}).get('changed_members')
         return validate_package(Path(path),Path(before) if before else None,expected)

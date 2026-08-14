@@ -74,3 +74,7 @@ On unsupported, stale, malformed, ambiguous, conflicting, unsafe, or excessive r
 ## Unsupported boundary
 
 Refuse `.xls/.xlsb/.ods/.xlsm`, VBA/macros/signatures, charts/pivots/slicers/images/embedded objects, external workbook links, PowerQuery/data connections, named-range edits, conditional-format/data-validation edits, arbitrary merge/unmerge, row/column insertion/deletion, formula translation/recalculation, arbitrary style dictionaries, generic range DSL, and generated Python.
+
+## Rich Inspect and strict templates
+
+Use `inspect(source, view="inventory")` before mutation and stop on `refuse_mutation`. Strict `fill_template(source, values, output)` resolves `{{token}}` only in bounded non-formula string cells and compiles each replacement to `set_cell_value`. Missing, unknown, formula-hosted, malformed, or unresolved tokens refuse.

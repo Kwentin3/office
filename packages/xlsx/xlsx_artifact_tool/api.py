@@ -1,11 +1,34 @@
 from __future__ import annotations
-import copy,hashlib,json,math,os,re,stat,tempfile,zipfile
-from pathlib import Path,PurePosixPath
+
+import copy
+import hashlib
+import json
+import math
+import os
+import re
+import stat
+import tempfile
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any
-from openpyxl import Workbook,load_workbook
-from openpyxl.styles import Font,PatternFill
-from openpyxl.utils.cell import range_boundaries,get_column_letter
+
 from lxml import etree
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils.cell import get_column_letter, range_boundaries
+
+from .inventory import inspect_inventory
+from .template import (
+ has_marker,
+ package_has_marker,
+ token_names,
+ unsupported_scope_has_marker,
+ validate_values,
+ well_formed,
+)
+from .template import (
+ render as render_tokens,
+)
 
 _STYLES={
  'normal':{'font':Font(),'fill':PatternFill(fill_type=None,fgColor='00000000'),'number_format':'General'},
@@ -15,6 +38,11 @@ _STYLES={
 }
 _FORMULA_EXTERNAL=re.compile(r"\[[^\]]+\]")
 _FORMULA_DDE=re.compile(r"(?i)^=\s*(?:[a-z_][\w.]*\s*\||ddeauto\s*\()")
+def _parse_xml(payload:bytes):
+ if b'<!DOCTYPE' in payload or b'<!ENTITY' in payload:raise ValueError('validation_failure')
+ root=etree.fromstring(payload,parser=etree.XMLParser(resolve_entities=False,no_network=True,huge_tree=False));info=root.getroottree().docinfo
+ if info.doctype or info.internalDTD is not None or info.externalDTD is not None:raise ValueError('validation_failure')
+ return root
 def _sha(path:Path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def _object_sha(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
 def _refusal(reason,details=''):return {'status':'refused','reason':reason,'details':details}
@@ -37,19 +65,15 @@ def _admit(path:Path):
    unsafe_type=any(not (info.is_dir() or stat.S_IFMT(mode) in (0,stat.S_IFREG)) for info,mode in zip(infos,modes))
    unsafe_size=len(infos)>10000 or total>64*1024*1024 or any(x.file_size>16*1024*1024 or x.file_size>1024*1024 and x.file_size/max(x.compress_size,1)>200 for x in infos)
    if len(names)!=len(set(names)) or any(n.startswith('/') or '\\' in n or '..' in PurePosixPath(n).parts for n in names) or unsafe_type or unsafe_size:raise ValueError
+   for name in names:
+    if name.endswith(('.xml','.rels')):_parse_xml(z.read(name))
+ except etree.XMLSyntaxError as exc:raise ValueError('validation_failure') from exc
  except Exception as exc:raise ValueError('unsafe_package') from exc
 
 def _candidate_openable(path:Path):
  try:
   _admit(path);workbook=load_workbook(path,data_only=False);workbook.close()
  except Exception as exc:raise ValueError('validation_failure') from exc
-
-def _unsupported_mutation_members(path:Path):
- prefixes=('_xmlsignatures/','xl/drawings/','xl/charts/','xl/pivot','xl/externalLinks/','xl/embeddings/','xl/ctrlProps/','xl/slicers/','customXml/')
- exact={'xl/vbaProject.bin','xl/connections.xml'}
- with zipfile.ZipFile(path) as archive:
-  names=set(archive.namelist())
- return sorted(name for name in names if name in exact or name.startswith(prefixes) or re.fullmatch(r'xl/(threaded)?comments\d*\.xml',name))
 
 def _sheet_member(path:Path,sheet_name:str):
  ns={'m':'http://schemas.openxmlformats.org/spreadsheetml/2006/main','r':'http://schemas.openxmlformats.org/officeDocument/2006/relationships','p':'http://schemas.openxmlformats.org/package/2006/relationships'}
@@ -202,6 +226,8 @@ class XlsxArtifactTool:
  def inspect(self,source:Path|str,view='region',sheet=None,range_ref=None,query=None,**kwargs):
   try:
    source=Path(source)
+   if view=='inventory':
+    _admit(source);result=inspect_inventory(source);result['source_sha256']=_sha(source);return result
    if view=='region':return _snapshot(source,view,sheet,range_ref)
    _admit(source);digest=_sha(source);wb=load_workbook(source,data_only=False)
    if view=='summary':
@@ -308,11 +334,12 @@ class XlsxArtifactTool:
    except Exception:
     source_snapshot.unlink(missing_ok=True);raise
    _admit(source_snapshot);source=source_snapshot
-   unsupported_members=_unsupported_mutation_members(source)
-   if any(name.startswith('_xmlsignatures/') for name in unsupported_members):raise ValueError('unsupported_capability')
+   inventory=inspect_inventory(source)
+   if inventory['mutation_policy']['decision']=='refuse_mutation':raise ValueError('unsupported_capability')
    package_safe_types={'set_cell_value','set_cell_formula'}
-   if unsupported_members and (not isinstance(plan,dict) or any(not isinstance(op,dict) or op.get('type') not in package_safe_types for op in plan.get('operations',[]))):raise ValueError('unsupported_capability')
    if not isinstance(plan,dict) or set(plan)!={'schema','source_sha256','snapshot_sha256','operations','plan_sha256'} or not isinstance(plan.get('operations'),list) or not plan['operations']:raise ValueError('validation_failure')
+   package_preserving=all(isinstance(op,dict) and op.get('type') in package_safe_types for op in plan['operations'])
+   if inventory['mutation_policy']['warnings'] and not package_preserving:raise ValueError('unsupported_capability')
    if len(plan['operations'])>1000:raise ValueError('unsafe_plan')
    structural_regions=[op.get('region_id') for op in plan['operations'] if isinstance(op,dict) and op.get('type') in {'append_rows','reorder_rows'}]
    if len(structural_regions)!=len(set(structural_regions)):raise ValueError('conflict')
@@ -365,7 +392,7 @@ class XlsxArtifactTool:
     else:raise ValueError('unsupported_capability')
     prepared.append((cell,action,op['sheet'],op['coordinate']))
    def build(path):
-    if unsupported_members:
+    if package_preserving:
      _package_set_values(source,path,[(sheet,coordinate,action,value) for _,(action,value),sheet,coordinate in prepared]);return
     for cell,(action,value),_,_ in prepared:
      if action in {'value','formula'}:cell.value=value
@@ -412,6 +439,49 @@ class XlsxArtifactTool:
   except Exception as exc:return _refusal('validation_failure',str(exc))
   finally:
    if source_snapshot is not None:source_snapshot.unlink(missing_ok=True)
+ def fill_template(self,source:Path|str,values:dict[str,str],output:Path|str,strict:bool=True):
+  source=Path(source);output=Path(output);candidate=None;workbook=None
+  try:
+   if strict is not True:raise ValueError('unsupported_capability')
+   if output.suffix.lower()!='.xlsx' or source.resolve()==output.resolve():raise ValueError('unsafe_plan')
+   values=validate_values(values);_admit(source);digest=_sha(source);workbook=load_workbook(source,data_only=False)
+   if unsupported_scope_has_marker(source):raise ValueError('unsupported_capability')
+   if sum(ws.max_row*ws.max_column for ws in workbook.worksheets)>250000:raise ValueError('unsafe_plan')
+   targets=[];required=set()
+   for ws in workbook.worksheets:
+    for row in ws.iter_rows():
+     for cell in row:
+      value=cell.value
+      if not isinstance(value,str) or not has_marker(value):continue
+      if cell.data_type=='f':raise ValueError('unsupported_capability')
+      if not well_formed(value):raise ValueError('validation_failure')
+      names=token_names(value)
+      if not names:raise ValueError('validation_failure')
+      required.update(names)
+      targets.append({'id':_id(digest,ws.title,cell.coordinate,'value',value),'sheet':ws.title,'coordinate':cell.coordinate,'row':cell.row,'column':cell.column,'kind':'value','style_id':cell.style_id,'number_format':cell.number_format,'value':value})
+   if not required:raise ValueError('validation_failure')
+   if set(values)!=required:return _refusal('validation_failure',{'missing':sorted(required-set(values)),'unknown':sorted(set(values)-required)})
+   rows=[{'id':_row_id(digest,item['sheet'],item['row'],[item]),'row_number':item['row'],'cells':[item]} for item in targets]
+   snapshot={'status':'ok','artifact_type':'xlsx','source_sha256':digest,'view':'template','rows':rows};snapshot['snapshot_sha256']=_object_sha({k:v for k,v in snapshot.items() if k!='status'})
+   operations=[{'type':'set_cell_value','target_id':item['id'],'value':render_tokens(item['value'],values),'expected_kind':'value'} for item in targets]
+   planned=self.plan(snapshot,{'operations':operations})
+   if planned.get('status')!='ok':return planned
+   workbook.close();workbook=None;output.parent.mkdir(parents=True,exist_ok=True)
+   fd,name=tempfile.mkstemp(prefix='.'+output.name+'.template.',suffix='.xlsx',dir=output.parent);os.close(fd);candidate=Path(name)
+   applied=self.apply(source,planned['plan'],candidate)
+   if applied.get('status')!='ok':return applied
+   after=load_workbook(candidate,data_only=False)
+   try:
+    for ws in after.worksheets:
+     if sum(1 for row in ws.iter_rows() for cell in row if isinstance(cell.value,str) and has_marker(cell.value)):raise ValueError('validation_failure')
+   finally:after.close()
+   if package_has_marker(candidate):raise ValueError('validation_failure')
+   os.replace(candidate,output);candidate=None;applied['output']=str(output);applied['template']={'strict':True,'keys':sorted(required),'resolved_targets':len(targets)};return applied
+  except ValueError as exc:return _refusal(str(exc))
+  except (KeyError,TypeError,zipfile.BadZipFile):return _refusal('validation_failure')
+  finally:
+   if workbook is not None:workbook.close()
+   if candidate is not None:candidate.unlink(missing_ok=True)
  def validate(self,source:Path|str,before:Path|str|None=None):
   source=Path(source)
   try:

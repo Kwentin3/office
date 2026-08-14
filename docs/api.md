@@ -10,6 +10,7 @@ tool.create(model, output)
 tool.inspect(source, view="full", query=None)
 tool.plan(snapshot, request)
 tool.apply(source, plan, output)
+tool.fill_template(source, values, output, strict=True)
 tool.validate(source, before=None, expectations=None)
 ```
 
@@ -25,6 +26,7 @@ tool.create(model, output)
 tool.inspect(source, view="summary", sheet=None, range_ref=None, query=None)
 tool.plan(snapshot, request)
 tool.apply(source, plan, output)
+tool.fill_template(source, values, output, strict=True)
 tool.validate(source, before=None)
 ```
 
@@ -40,6 +42,7 @@ tool.inspect(source, view="summary", slide_id=None, query=None)
 tool.plan(snapshot, request)
 tool.apply(source, plan, output)
 tool.create(template, model, output)
+tool.fill_template(source, values, output, strict=True)
 tool.validate(source, before=None)
 ```
 
@@ -66,3 +69,21 @@ CLI: `office-pptx-compose`. Managed archetypes and variants are exposed by its `
 DOCX/XLSX/PPTX editor operations return typed dictionaries. Treat `refused` as a normal safe outcome. Never weaken a refusal by constructing a lower-level library call.
 
 The composer CLI uses `status:error`, `code`, and `message` for invalid requests; renderer/preview Python calls raise their documented bounded error types.
+
+## Rich Inspect
+
+The preservation-first tools accept `view="inventory"` and return a format-specific `features` map plus `mutation_policy.decision` (`safe`, `safe_with_warnings`, or `refuse_mutation`). Blocker decisions are rechecked by `apply`; callers cannot bypass them with a forged plan. See [Rich Inspect and strict templates](rich-inspect-and-templates.md).
+
+## Application Witness
+
+```python
+from office_application_witness import ApplicationWitness
+
+report = ApplicationWitness(workdir, executable="/usr/bin/soffice").observe(
+    source,
+    "docx",  # docx | xlsx | pptx
+    timeout_seconds=60,
+)
+```
+
+The witness observes a private clone and always removes the application output. Its report never claims Microsoft Office equivalence. LibreOffice is a host-provided optional runtime, not a Python dependency. See [Application Witness](application-witness.md).

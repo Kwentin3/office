@@ -1,6 +1,6 @@
 # Kwentin Office
 
-Contract-first Python tools for creating, inspecting, editing, and validating Office artifacts from applications and LLM runtimes.
+Contract-first Python tools for creating, inspecting, editing, validating, and independently observing Office artifacts from applications and LLM runtimes.
 
 ## Why this exists
 
@@ -19,7 +19,7 @@ closed JSON/Python contract
 From the versioned GitHub archive (works in slim containers without a `git` binary):
 
 ```bash
-python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.1.0.zip"
+python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.2.0.zip"
 ```
 
 For development:
@@ -43,8 +43,9 @@ Python 3.11+ is required.
 | XLSX | `xlsx_artifact_tool` | `office-xlsx` | create + cell/range/formula edit |
 | PPTX editor | `pptx_artifact_tool` | `office-pptx-edit` | preservation-first template/slot edit |
 | PPTX composer | `pptx_ai_composer` | `office-pptx-compose` | creation-first semantic composition |
+| Application witness | `office_application_witness` | `office-witness` | clone-only LibreOffice observation |
 
-One distribution makes installation simple. The four runtimes remain isolated: no common Office AST, no shared OOXML runtime, and no cross-format SceneSpec.
+One distribution makes installation simple. The four document runtimes remain isolated: no common Office AST, no shared OOXML runtime, and no cross-format SceneSpec. The witness is an operational subprocess boundary, not a document runtime.
 
 ## Quick start
 
@@ -120,6 +121,8 @@ See:
 - [host adapter example](examples/openwebui_backend/office_service.py)
 - [public APIs](docs/api.md)
 - [architecture](docs/architecture.md)
+- [Rich Inspect and strict templates](docs/rich-inspect-and-templates.md)
+- [Application Witness](docs/application-witness.md)
 
 The core package has no dependency on Open WebUI, FastAPI, a model provider, or a storage vendor.
 
@@ -140,7 +143,7 @@ The bounded implementations pass their local regression suites and independent e
 
 Still required for a strict production sign-off:
 
-- Microsoft Word/Excel/PowerPoint or LibreOffice open-save-reopen automation;
+- real LibreOffice and Microsoft Word/Excel/PowerPoint application gates (the packaged witness contract is hermetically tested, but LibreOffice is not installed by this package);
 - renderer-based visual regression and font-substitution checks;
 - Excel/LibreOffice formula recalculation;
 - multi-tenant host sandboxing and retention policy.

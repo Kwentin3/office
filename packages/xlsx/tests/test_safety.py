@@ -44,13 +44,9 @@ class SafetyTests(unittest.TestCase):
    dst.writestr('_xmlsignatures/origin.sigs',b'<origin/>');dst.writestr('_xmlsignatures/_rels/origin.sigs.rels',b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>');dst.writestr('_xmlsignatures/sig1.xml',b'<Signature/>')
   snap=self.tool.inspect(signed,view='region',sheet='Data',range_ref='A1:B2');target=next(x for x in snap['cells'] if x['coordinate']=='B2');plan=self.tool.plan(snap,{'operations':[{'type':'set_cell_value','target_id':target['id'],'value':3,'expected_kind':'value'}]})['plan'];out=self.root/'must-not-invalidate-signature.xlsx';result=self.tool.apply(signed,plan,out);self.assertEqual((result['status'],result['reason']),('refused','unsupported_capability'));self.assertFalse(out.exists())
  def test_apply_refuses_unsupported_package_features_before_candidate(self):
-  decorated=self.root/'decorated.xlsx';decorated.write_bytes(self.source.read_bytes())
-  rewritten=self.root/'rewritten.xlsx'
-  with zipfile.ZipFile(decorated) as src,zipfile.ZipFile(rewritten,'w') as dst:
-   for info in src.infolist():dst.writestr(info,src.read(info.filename))
-   dst.writestr('xl/comments1.xml','<comments/>')
-  rewritten.replace(decorated)
+  decorated=self.root/'decorated.xlsx';wb=load_workbook(self.source);wb['Data']['A1'].comment=Comment('preserve me','tester');wb.save(decorated)
   snap=self.tool.inspect(decorated,view='region',sheet='Data',range_ref='A1:B2');self.assertEqual(snap['status'],'ok')
+  inventory=self.tool.inspect(decorated,view='inventory');self.assertEqual(inventory['mutation_policy']['decision'],'safe_with_warnings');self.assertEqual(inventory['features']['comments'],1)
   plan=self.tool.plan(snap,{'operations':[{'type':'append_rows','region_id':snap['region_id'],'copy_from_row_id':snap['rows'][1]['id'],'rows':[['B',3]]}]})['plan'];out=self.root/'must-not-publish.xlsx'
   result=self.tool.apply(decorated,plan,out);self.assertEqual(result['status'],'refused');self.assertEqual(result['reason'],'unsupported_capability');self.assertFalse(out.exists())
 

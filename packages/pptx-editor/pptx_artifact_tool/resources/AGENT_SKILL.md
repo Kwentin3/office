@@ -74,3 +74,7 @@ Unknown or ambiguous keys refuse.
 ## Refuse
 
 Refuse arbitrary shape geometry, slide cloning/deletion, layout/master/theme editing, images, charts, SmartArt, groups, animations, notes/comments, hyperlinks/actions, table structure changes, raw OOXML and generated Python.
+
+## Rich Inspect and strict templates
+
+Use `inspect(source, view="inventory")` before mutation and stop on `refuse_mutation`. Strict `fill_template(source, values, output)` resolves `{{token}}` only in explicit `slot:*` text shapes and their table cells. Tokens in unmanaged shapes or speaker notes refuse; no editable surface is inferred.

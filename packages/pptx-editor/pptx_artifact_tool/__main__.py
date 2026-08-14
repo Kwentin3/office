@@ -12,6 +12,7 @@ def main():
   elif action=='plan':result=tool.plan(payload['snapshot'],payload['request'])
   elif action=='apply':result=tool.apply(Path(payload['source']),payload['plan'],Path(payload['output']))
   elif action=='create':result=tool.create(Path(payload['template']),payload['model'],Path(payload['output']))
+  elif action=='fill_template':result=tool.fill_template(Path(payload['source']),payload['values'],Path(payload['output']),strict=payload.get('strict',True))
   elif action=='validate':result=tool.validate(Path(payload['source']),before=Path(payload['before']) if payload.get('before') else None)
   else:result=_refuse('unsupported_capability')
  except (ValueError,KeyError,TypeError,json.JSONDecodeError):result=_refuse('validation_failure')

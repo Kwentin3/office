@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 import tarfile
@@ -10,54 +11,25 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERIFIER = ROOT / "scripts/verify_distribution.py"
-DIST_INFO = "kwentin_office-0.1.0.dist-info"
+VERIFIER_PATH = ROOT / "scripts/verify_distribution.py"
+SPEC = importlib.util.spec_from_file_location("distribution_verifier", VERIFIER_PATH)
+assert SPEC is not None and SPEC.loader is not None
+VERIFIER = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(VERIFIER)
 
-WHEEL_MEMBERS = {
-    "office_artifact_tool/__init__.py",
-    "office_artifact_tool/__main__.py",
-    "office_artifact_tool/resources/AGENT_SKILL.md",
-    "office_artifact_tool/resources/create.schema.json",
-    "office_artifact_tool/resources/plan.schema.json",
-    "xlsx_artifact_tool/__init__.py",
-    "xlsx_artifact_tool/__main__.py",
-    "xlsx_artifact_tool/resources/AGENT_SKILL.md",
-    "xlsx_artifact_tool/resources/CONTRACT.md",
-    "xlsx_artifact_tool/resources/create.schema.json",
-    "xlsx_artifact_tool/resources/plan.schema.json",
-    "pptx_artifact_tool/__init__.py",
-    "pptx_artifact_tool/__main__.py",
-    "pptx_artifact_tool/resources/AGENT_SKILL.md",
-    "pptx_artifact_tool/resources/CONTRACT.md",
-    "pptx_ai_composer/__init__.py",
-    "pptx_ai_composer/__main__.py",
-    "pptx_ai_composer/assets/NotoSans-Regular.ttf",
-    "pptx_ai_composer/assets/OFL.txt",
-    "pptx_ai_composer/resources/DOMAIN_CONTRACTS.md",
-    "pptx_ai_composer/resources/MANAGED_LIBRARY.md",
-    f"{DIST_INFO}/entry_points.txt",
-    f"{DIST_INFO}/licenses/LICENSE",
-    f"{DIST_INFO}/licenses/NOTICE",
-}
-
-SDIST_MEMBERS = {
-    "README.md",
-    "LICENSE",
-    "NOTICE",
-    "pyproject.toml",
-    "docs/openwebui-integration.md",
-    "examples/openwebui_backend/office_service.py",
-    "packages/docx/tests/test_mvp_api.py",
-    "packages/xlsx/tests/test_safety.py",
-    "packages/pptx-editor/tests/test_safety.py",
-    "packages/pptx-composer/tests/test_renderer.py",
-    "packages/pptx-composer/pptx_ai_composer/assets/NotoSans-Regular.ttf",
-    "packages/pptx-composer/pptx_ai_composer/assets/OFL.txt",
-    "tests/test_openwebui_adapter.py",
-    "tests/test_distribution_verifier.py",
-    "scripts/test_all.py",
-    "scripts/verify_distribution.py",
-}
+DIST_INFO = VERIFIER.DIST_INFO
+WHEEL_MEMBERS = set(VERIFIER.WHEEL_REQUIRED)
+SDIST_MEMBERS = set(VERIFIER.SDIST_REQUIRED)
+VALID_ENTRY_POINTS = (
+    b"[console_scripts]\n"
+    b"office-docx = office_artifact_tool.__main__:main\n"
+    b"office-xlsx = xlsx_artifact_tool.__main__:main\n"
+    b"office-pptx-edit = pptx_artifact_tool.__main__:main\n"
+    b"office-pptx-compose = pptx_ai_composer.__main__:main\n"
+    b"office-witness = office_application_witness.__main__:main\n"
+)
+VALID_METADATA = b"Metadata-Version: 2.4\nName: kwentin-office\nVersion: 0.2.0\nRequires-Python: >=3.11\n"
+VALID_TOP_LEVEL = b"\n".join(name.encode() for name in sorted(VERIFIER.REQUIRED_TOP_LEVEL)) + b"\n"
 
 
 class DistributionVerifierTests(unittest.TestCase):
@@ -73,34 +45,45 @@ class DistributionVerifierTests(unittest.TestCase):
         *,
         omit_wheel: str | None = None,
         omit_sdist: str | None = None,
-        entry_points: bytes | None = None,
+        entry_points: bytes = VALID_ENTRY_POINTS,
+        metadata: bytes = VALID_METADATA,
+        top_level: bytes = VALID_TOP_LEVEL,
+        extra_wheel: str | None = None,
+        extra_sdist: str | None = None,
+        duplicate_wheel: str | None = None,
     ) -> None:
-        wheel = self.dist / "kwentin_office-0.1.0-py3-none-any.whl"
-        valid_entry_points = (
-            b"[console_scripts]\n"
-            b"office-docx = office_artifact_tool.__main__:main\n"
-            b"office-xlsx = xlsx_artifact_tool.__main__:main\n"
-            b"office-pptx-edit = pptx_artifact_tool.__main__:main\n"
-            b"office-pptx-compose = pptx_ai_composer.__main__:main\n"
-        )
+        wheel = self.dist / "kwentin_office-0.2.0-py3-none-any.whl"
         with zipfile.ZipFile(wheel, "w") as archive:
             for name in sorted(WHEEL_MEMBERS - ({omit_wheel} if omit_wheel else set())):
-                if name.endswith(".dist-info/entry_points.txt"):
-                    payload = entry_points if entry_points is not None else valid_entry_points
+                if name == f"{DIST_INFO}/entry_points.txt":
+                    payload = entry_points
+                elif name == f"{DIST_INFO}/METADATA":
+                    payload = metadata
+                elif name == f"{DIST_INFO}/top_level.txt":
+                    payload = top_level
                 else:
                     payload = b"x"
                 archive.writestr(name, payload)
-        sdist = self.dist / "kwentin_office-0.1.0.tar.gz"
+            if extra_wheel:
+                archive.writestr(extra_wheel, b"x")
+            if duplicate_wheel:
+                archive.writestr(duplicate_wheel, b"duplicate")
+        sdist = self.dist / "kwentin_office-0.2.0.tar.gz"
         with tarfile.open(sdist, "w:gz") as archive:
             for suffix in sorted(SDIST_MEMBERS - ({omit_sdist} if omit_sdist else set())):
                 payload = b"x"
-                info = tarfile.TarInfo(f"kwentin_office-0.1.0/{suffix}")
+                info = tarfile.TarInfo(f"kwentin_office-0.2.0/{suffix}")
+                info.size = len(payload)
+                archive.addfile(info, BytesIO(payload))
+            if extra_sdist:
+                payload = b"x"
+                info = tarfile.TarInfo(f"kwentin_office-0.2.0/{extra_sdist}")
                 info.size = len(payload)
                 archive.addfile(info, BytesIO(payload))
 
     def verify(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(VERIFIER), str(self.dist)],
+            [sys.executable, str(VERIFIER_PATH), str(self.dist)],
             text=True,
             capture_output=True,
             check=False,
@@ -114,22 +97,41 @@ class DistributionVerifierTests(unittest.TestCase):
         for member in sorted(WHEEL_MEMBERS):
             with self.subTest(member=member):
                 self.write_archives(omit_wheel=member)
-                result = self.verify()
-                self.assertNotEqual(result.returncode, 0, member)
+                self.assertNotEqual(self.verify().returncode, 0, member)
 
     def test_each_required_sdist_member_is_fail_closed(self) -> None:
         for member in sorted(SDIST_MEMBERS):
             with self.subTest(member=member):
                 self.write_archives(omit_sdist=member)
-                result = self.verify()
-                self.assertNotEqual(result.returncode, 0, member)
+                self.assertNotEqual(self.verify().returncode, 0, member)
 
-    def test_all_four_console_scripts_are_required(self) -> None:
-        incomplete = (
-            b"[console_scripts]\n"
-            b"office-docx = office_artifact_tool.__main__:main\n"
-        )
-        self.write_archives(entry_points=incomplete)
+    def test_all_five_console_scripts_are_required(self) -> None:
+        self.write_archives(entry_points=b"[console_scripts]\noffice-docx = office_artifact_tool.__main__:main\n")
+        self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_runtime_module_subtraction_is_refused(self) -> None:
+        self.write_archives(omit_wheel="pptx_ai_composer/preview.py")
+        self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_metadata_and_top_level_contents_are_closed(self) -> None:
+        for kwargs in (
+            {"metadata": VALID_METADATA.replace(b"Version: 0.2.0", b"Version: 9.9.9")},
+            {"top_level": b"office_artifact_tool\n"},
+        ):
+            with self.subTest(kwargs=kwargs):
+                self.write_archives(**kwargs)
+                self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_unexpected_wheel_runtime_member_is_refused(self) -> None:
+        self.write_archives(extra_wheel="pptx_ai_composer/private_oracle.py")
+        self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_unexpected_sdist_member_is_refused(self) -> None:
+        self.write_archives(extra_sdist="private-release-note.txt")
+        self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_duplicate_archive_member_is_refused(self) -> None:
+        self.write_archives(duplicate_wheel="pptx_ai_composer/preview.py")
         self.assertNotEqual(self.verify().returncode, 0)
 
 

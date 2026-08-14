@@ -234,3 +234,7 @@ It may not claim:
 - pixel/print fidelity;
 - hidden-input generalization;
 - production or hostile multi-tenant readiness.
+
+## v0.2 bounded additions
+
+`inspect(..., view="inventory")` returns a format-specific risk inventory. External links, connections, OLE, macros, and signatures block mutation. `fill_template(source, values, output, strict=True)` supports exact `{{token}}` replacement only in bounded non-formula string cells and compiles to existing `set_cell_value` operations; it adds no new mutation primitive.

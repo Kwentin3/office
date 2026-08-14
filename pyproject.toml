@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kwentin-office"
-version = "0.1.0"
-description = "Contract-first, bounded DOCX, XLSX, and PPTX artifact tools"
+version = "0.2.0"
+description = "Contract-first DOCX, XLSX, PPTX artifact tools and clone-only application witness"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -40,6 +40,7 @@ office-docx = "office_artifact_tool.__main__:main"
 office-xlsx = "xlsx_artifact_tool.__main__:main"
 office-pptx-edit = "pptx_artifact_tool.__main__:main"
 office-pptx-compose = "pptx_ai_composer.__main__:main"
+office-witness = "office_application_witness.__main__:main"
 
 [tool.setuptools.packages.find]
 where = [
@@ -47,19 +48,21 @@ where = [
   "packages/xlsx",
   "packages/pptx-editor",
   "packages/pptx-composer",
+  "packages/application-witness",
 ]
 include = [
   "office_artifact_tool*",
   "xlsx_artifact_tool*",
   "pptx_artifact_tool*",
   "pptx_ai_composer*",
+  "office_application_witness*",
 ]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
 office_artifact_tool = ["resources/*.json", "resources/*.md"]
 xlsx_artifact_tool = ["resources/*.json", "resources/*.md"]
-pptx_artifact_tool = ["resources/*.md"]
+pptx_artifact_tool = ["resources/*.json", "resources/*.md"]
 pptx_ai_composer = ["assets/*.ttf", "assets/*.txt", "resources/*.md"]
 
 [tool.ruff]
