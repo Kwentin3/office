@@ -131,7 +131,10 @@ class LibreOfficeMatrixRunnerTests(unittest.TestCase):
         self.assertIn("run_libreoffice_matrix.py", workflow)
         self.assertIn("run_xlsx_recalculation.py", workflow)
         self.assertNotIn("rm -rf", workflow)
-        self.assertIn("github.run_attempt", workflow)
+        self.assertIn("GITHUB_RUN_ATTEMPT", workflow)
+        self.assertNotIn("OFFICE_GATE_ROOT: ${{ runner.temp }}", workflow)
+        self.assertIn('OFFICE_GATE_ROOT=%s/office-gate-%s-%s', workflow)
+        self.assertIn('>> "$GITHUB_ENV"', workflow)
 
 
 if __name__ == "__main__":
