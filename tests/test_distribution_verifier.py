@@ -203,6 +203,11 @@ class DistributionVerifierTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertIn(f"m.version('kwentin-office') == '{version}'", workflow)
 
+    def test_ci_installs_and_runs_authoritative_pytest_suite(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn("pip install --upgrade pip build pytest", workflow)
+        self.assertIn("python -m pytest -q --import-mode=importlib", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

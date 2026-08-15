@@ -9,9 +9,9 @@
 | PPTX editor | 44/44 | required before tag | preservation matrix + fake-soffice contract |
 | PPTX composer | 92/92 | required before tag | hash-bound SVG/PNG structural preview only |
 | Application Witness | 28/28 | required before tag | hermetic fake executable |
-| Repository integration | 39/39 | required before tag | descriptor-bound WebUI adapter + manual workflow contract |
+| Repository integration | 40/40 | required before tag | descriptor-bound WebUI adapter + manual workflow contract |
 
-`scripts/test_all.py` passes **334/334** unittest cases. The authoritative cross-package pytest run passes **351/351 tests plus 314 subtests**. Repository CI reruns the packaged source rather than trusting these counts.
+`scripts/test_all.py` passes **335/335** unittest cases. The authoritative cross-package pytest run passes **352/352 tests plus 314 subtests**. Repository CI runs both suites on Python 3.11 and 3.12, then verifies the built archives and a clean wheel installation.
 
 Distribution evidence for the v0.4.0 candidate:
 

@@ -22,7 +22,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install package and build tools
-        run: python -m pip install --upgrade pip build && python -m pip install -e .
+        run: python -m pip install --upgrade pip build pytest && python -m pip install -e .
+      - name: Run authoritative cross-package tests
+        run: python -m pytest -q --import-mode=importlib
       - name: Run all domain suites
         run: python scripts/test_all.py
       - name: Build wheel and source archive
