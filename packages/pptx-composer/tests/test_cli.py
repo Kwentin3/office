@@ -72,7 +72,12 @@ class JsonCliTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(preview.returncode, 0, preview.stderr)
-            self.assertEqual(json.loads(preview.stdout)["status"], "previewed")
+            preview_payload = json.loads(preview.stdout)
+            self.assertEqual(preview_payload["status"], "previewed")
+            self.assertEqual(preview_payload["interaction"], "chat_only")
+            self.assertRegex(preview_payload["revision"], r"^[0-9a-f]{64}$")
+            self.assertEqual(len(preview_payload["display_artifacts"]), 3)
+            self.assertTrue(Path(preview_payload["review_contract"]).is_file())
             self.assertTrue((preview_path / "manifest.json").exists())
             catalog = subprocess.run(
                 [PYTHON, "-m", "pptx_ai_composer"],

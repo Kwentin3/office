@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import os
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from lxml import etree
 from PIL import Image
 from pptx import Presentation
 from pptx.chart.data import ChartData
@@ -24,6 +24,7 @@ from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Pt
 
+from .asset_admission import AdmittedAsset, AssetAdmissionError, admit_assets
 from .compiler import compile_deck
 from .contracts import validate_deck_spec
 from .scene_contract import validate_scene_spec
@@ -41,37 +42,11 @@ def _rgb(value: str) -> RGBColor:
     return RGBColor.from_string(value.upper())
 
 
-def _asset_map(deck: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    assets: dict[str, dict[str, Any]] = {}
-    for asset in deck["assets"]:
-        path = Path(asset["path"])
-        if not path.is_file() or path.is_symlink():
-            raise RenderError(f"asset is missing or unsafe: {asset['asset_id']}")
-        if hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
-            raise RenderError(f"asset hash mismatch: {asset['asset_id']}")
-        if asset["kind"] == "svg":
-            try:
-                root = etree.fromstring(path.read_bytes(), parser=etree.XMLParser(resolve_entities=False, no_network=True, recover=False))
-            except Exception as exc:
-                raise RenderError(f"unsafe svg: {asset['asset_id']}: {exc}") from exc
-            for element in root.iter():
-                local_name = etree.QName(element).localname
-                if local_name in {"script", "foreignObject", "iframe", "object", "embed"}:
-                    raise RenderError(f"unsafe svg: forbidden {local_name}")
-                for name, value in element.attrib.items():
-                    attr_name = etree.QName(name).localname.lower()
-                    lowered = value.strip().lower()
-                    if attr_name.startswith("on") or lowered.startswith(("javascript:", "data:text/html")):
-                        raise RenderError("unsafe svg: active attribute")
-                    if attr_name in {"href", "src"} and not lowered.startswith(("#", "data:image/")):
-                        raise RenderError("unsafe svg: external reference")
-            fallback = Path(asset["fallback_path"])
-            if not fallback.is_file() or fallback.is_symlink():
-                raise RenderError(f"asset fallback is missing or unsafe: {asset['asset_id']}")
-            if hashlib.sha256(fallback.read_bytes()).hexdigest() != asset["fallback_sha256"]:
-                raise RenderError(f"asset fallback hash mismatch: {asset['asset_id']}")
-        assets[asset["asset_id"]] = copy.deepcopy(asset)
-    return assets
+def _asset_map(deck: dict[str, Any]) -> dict[str, AdmittedAsset]:
+    try:
+        return admit_assets(deck)
+    except AssetAdmissionError as exc:
+        raise RenderError(str(exc)) from exc
 
 
 def _emu_box(box: dict[str, float], canvas: dict[str, float]) -> tuple[Emu, Emu, Emu, Emu]:
@@ -143,40 +118,45 @@ def _add_chart(slide: Any, node: dict[str, Any], canvas: dict[str, float]) -> An
     return shape
 
 
-def _asset_raster_path(asset: dict[str, Any]) -> Path:
-    # STICKY LIMIT: V1 authenticates/sanitizes SVG but embeds its hash-bound PNG fallback.
-    return Path(asset["fallback_path"] if asset["kind"] == "svg" else asset["path"])
-
-
-def _add_image(slide: Any, node: dict[str, Any], canvas: dict[str, float], assets: dict[str, dict[str, Any]]) -> Any:
+def _add_image(
+    slide: Any,
+    node: dict[str, Any],
+    canvas: dict[str, float],
+    assets: dict[str, AdmittedAsset],
+) -> Any:
     if node["asset_id"] not in assets:
         raise RenderError(f"scene references unavailable asset: {node['asset_id']}")
-    path = _asset_raster_path(assets[node["asset_id"]])
+    raster_bytes = assets[node["asset_id"]].raster_bytes
     x, y, w, h = _emu_box(node["box"], canvas)
     if node["fit"] == "contain":
-        picture = slide.shapes.add_picture(str(path), x, y, w, h)
+        picture = slide.shapes.add_picture(io.BytesIO(raster_bytes), x, y, w, h)
     else:
-        with Image.open(path) as image:
+        with Image.open(io.BytesIO(raster_bytes)) as image:
             source_w, source_h = image.size
-            if source_w <= 0 or source_h <= 0:
-                raise RenderError(f"invalid raster dimensions: {node['asset_id']}")
-            target_ratio = w / h; source_ratio = source_w / source_h
+            target_ratio = w / h
+            source_ratio = source_w / source_h
             if source_ratio >= target_ratio:
-                crop_h = source_h; crop_w = round(source_h * target_ratio)
+                crop_h = source_h
+                crop_w = round(source_h * target_ratio)
             else:
-                crop_w = source_w; crop_h = round(source_w / target_ratio)
-            left = max(0, (source_w - crop_w) // 2); top = max(0, (source_h - crop_h) // 2)
+                crop_w = source_w
+                crop_h = round(source_w / target_ratio)
+            left = max(0, (source_w - crop_w) // 2)
+            top = max(0, (source_h - crop_h) // 2)
             crop = image.crop((left, top, left + crop_w, top + crop_h))
-            temporary = tempfile.NamedTemporaryFile(suffix=".png", delete=False); temporary.close(); crop.save(temporary.name, "PNG")
-        try:
-            picture = slide.shapes.add_picture(temporary.name, x, y, w, h)
-        finally:
-            Path(temporary.name).unlink(missing_ok=True)
+            snapshot = io.BytesIO()
+            crop.save(snapshot, "PNG")
+            snapshot.seek(0)
+            picture = slide.shapes.add_picture(snapshot, x, y, w, h)
     picture.name = f"scene:{node['role']}"
     return picture
 
 
-def render_scene_presentation(scene_spec: dict[str, Any], *, assets: dict[str, dict[str, Any]]) -> Presentation:
+def render_scene_presentation(
+    scene_spec: dict[str, Any],
+    *,
+    assets: dict[str, AdmittedAsset],
+) -> Presentation:
     """Build an in-memory native presentation from a validated SceneSpec."""
     scene = validate_scene_spec(scene_spec)
     prs = Presentation(); prs.slide_width = SLIDE_W; prs.slide_height = SLIDE_H
@@ -200,17 +180,29 @@ def _candidate_gate(candidate: Path, deck: dict[str, Any]) -> dict[str, Any]:
     return validate_presentation(candidate, deck)
 
 
+def _path_contains_symlink(path: Path) -> bool:
+    """Reject an existing symlink at the output leaf or any ancestor."""
+    return any(candidate.is_symlink() for candidate in (path, *path.parents))
+
+
 def render_deck(deck_spec: dict[str, Any], output: str | Path, *, protected_paths: Iterable[str | Path] = (), variants: dict[str, str] | None = None, slide_ids: Iterable[str] | None = None) -> dict[str, Any]:
     """Compile, render privately, validate, then atomically publish a native PPTX."""
     deck = validate_deck_spec(deck_spec)
-    output_path = Path(output).resolve(); protected = {Path(path).resolve() for path in protected_paths}
-    if output_path in protected:
+    raw_output = Path(output).expanduser().absolute()
+    if _path_contains_symlink(raw_output):
+        raise RenderError("output path must not contain a symlink")
+    output_path = raw_output
+    resolved_output = output_path.resolve(strict=False)
+    protected = {Path(path).resolve() for path in protected_paths}
+    if resolved_output in protected:
         raise RenderError("output must not overwrite an input or protected path")
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if _path_contains_symlink(output_path):
+        raise RenderError("output path must not contain a symlink")
     assets = _asset_map(deck)
     asset_paths = {Path(asset["path"]).resolve() for asset in deck["assets"]}
     asset_paths.update(Path(asset["fallback_path"]).resolve() for asset in deck["assets"] if asset["kind"] == "svg")
-    if output_path in asset_paths:
+    if resolved_output in asset_paths:
         raise RenderError("output must not overwrite an asset path")
     scene = compile_deck(deck, variants=variants, slide_ids=slide_ids)
     selected_ids = {slide["slide_id"] for slide in scene["slides"]}
@@ -228,6 +220,8 @@ def render_deck(deck_spec: dict[str, Any], output: str | Path, *, protected_path
         gate = _candidate_gate(candidate, selected_deck)
         if gate["status"] == "invalid":
             raise RenderError("candidate validation failed")
+        if _path_contains_symlink(output_path):
+            raise RenderError("output path must not contain a symlink")
         os.replace(candidate, output_path)
     except Exception:
         candidate.unlink(missing_ok=True)

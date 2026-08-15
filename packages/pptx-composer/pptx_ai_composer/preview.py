@@ -8,6 +8,7 @@ primitives and atomic publication.
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import html
 import json
@@ -21,13 +22,44 @@ from xml.etree import ElementTree
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .asset_admission import AssetAdmissionError, admit_assets
 from .compiler import compile_deck
 from .contracts import validate_deck_spec
+from .review_contract import validate_review_packet
 from .scene_contract import validate_scene_spec
 
 
 class PreviewError(ValueError):
     """A deterministic preview refusal."""
+
+
+def _exchange_directories(source: Path, target: Path) -> None:
+    """Atomically exchange two existing directories or fail closed."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise PreviewError("atomic directory exchange is unavailable")
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    if renameat2(-100, os.fsencode(source), -100, os.fsencode(target), 2) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
+def _cleanup_old_generation(temporary: Path, backup: Path) -> None:
+    """Best-effort cleanup after the directory exchange commit point."""
+    try:
+        os.replace(temporary, backup)
+    except Exception:
+        try:
+            shutil.rmtree(temporary)
+        except Exception:
+            pass
+        return
+    try:
+        shutil.rmtree(backup)
+    except Exception:
+        pass
 
 
 _PREVIEW_FONT = Path(__file__).with_name("assets") / "NotoSans-Regular.ttf"
@@ -241,9 +273,23 @@ def _assert_safe_publication_paths(output: Path, backup: Path, protected: set[Pa
         raise PreviewError("preview backup path must be a directory")
 
 
-def render_scene_preview(scene_spec: dict[str, Any], output: str | Path, *, protected_paths: Iterable[str | Path] = ()) -> dict[str, Any]:
-    """Render validated SceneSpec to atomically published SVG/PNG previews."""
-    scene = validate_scene_spec(scene_spec)
+def _digest_json(value: Any) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _publish_scene_preview(
+    scene: dict[str, Any],
+    output: str | Path,
+    *,
+    protected_paths: Iterable[str | Path],
+    source_revision: str,
+) -> dict[str, Any]:
+    """Publish one validated SceneSpec under a trusted source revision."""
     raw_output = Path(output).expanduser().absolute()
     raw_backup = raw_output.with_name(f".{raw_output.name}.old")
     if raw_output.is_symlink() or raw_backup.is_symlink():
@@ -263,34 +309,100 @@ def render_scene_preview(scene_spec: dict[str, Any], output: str | Path, *, prot
             (temporary / svg_name).write_text(svg, encoding="utf-8")
             _rasterize_bounded_svg(svg, temporary / png_name, width, height)
             slides.append({"slide_id": slide["slide_id"], "archetype": slide["archetype"], "variant": slide["variant"], "file": svg_name, "png_file": png_name, "preview_fidelity": "structural"})
+        limitations = [
+            "font metrics and substitution are not PowerPoint-accurate",
+            "PowerPoint application repair behavior is not validated",
+            "native charts are represented approximately",
+            "image assets are represented by labeled placeholders, not rendered pixels",
+        ]
         manifest = {
             "manifest_version": "1.0",
             "deck_id": scene["deck_id"],
             "scene_version": scene["scene_version"],
             "fidelity": "structural_preview_not_powerpoint_render",
-            "limitations": ["font metrics and substitution are not PowerPoint-accurate", "PowerPoint application repair behavior is not validated", "native charts are represented approximately"],
+            "limitations": limitations,
             "diagnostics": {"text_overflow": _text_overflow_diagnostics(scene)},
             "slides": slides,
         }
         (temporary / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        review_slides = []
+        for number, slide in enumerate(slides, start=1):
+            svg_path = temporary / slide["file"]
+            png_path = temporary / slide["png_file"]
+            review_slides.append({
+                "slide_id": slide["slide_id"],
+                "number": number,
+                "png_file": slide["png_file"],
+                "png_sha256": _file_sha256(png_path),
+                "svg_file": slide["file"],
+                "svg_sha256": _file_sha256(svg_path),
+            })
+        review = validate_review_packet({
+            "contract_version": "1.0",
+            "kind": "pptx_chat_review",
+            "interaction": "chat_only",
+            "deck_id": scene["deck_id"],
+            "revision": source_revision,
+            "fidelity": manifest["fidelity"],
+            "limitations": limitations,
+            "diagnostics": manifest["diagnostics"],
+            "slides": review_slides,
+        })
+        (temporary / "review.json").write_text(json.dumps(review, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         backup = output_path.with_name(f".{output_path.name}.old")
         if backup.exists():
             shutil.rmtree(backup)
         if output_path.exists():
-            os.replace(output_path, backup)
-        os.replace(temporary, output_path)
-        if backup.exists():
-            shutil.rmtree(backup)
+            _exchange_directories(temporary, output_path)
+            _cleanup_old_generation(temporary, backup)
+        else:
+            os.replace(temporary, output_path)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
-    return {"status": "previewed", "deck_id": scene["deck_id"], "slide_count": len(scene["slides"]), "output": str(output_path)}
+    review_path = output_path / "review.json"
+    display_artifacts = [str((output_path / slide["png_file"]).resolve()) for slide in review_slides]
+    return {
+        "status": "previewed",
+        "deck_id": scene["deck_id"],
+        "slide_count": len(scene["slides"]),
+        "output": str(output_path),
+        "interaction": "chat_only",
+        "revision": source_revision,
+        "review_contract": str(review_path.resolve()),
+        "display_artifacts": display_artifacts,
+    }
+
+
+def render_scene_preview(
+    scene_spec: dict[str, Any],
+    output: str | Path,
+    *,
+    protected_paths: Iterable[str | Path] = (),
+) -> dict[str, Any]:
+    """Validate and render SceneSpec with a non-overridable scene revision."""
+    scene = validate_scene_spec(scene_spec)
+    return _publish_scene_preview(
+        scene,
+        output,
+        protected_paths=protected_paths,
+        source_revision=_digest_json({"scene": scene}),
+    )
 
 
 def render_preview(deck_spec: dict[str, Any], output: str | Path, *, protected_paths: Iterable[str | Path] = (), variants: dict[str, str] | None = None, slide_ids: Iterable[str] | None = None) -> dict[str, Any]:
     """Compile semantic DeckSpec, then invoke the isolated SceneSpec backend."""
     deck = validate_deck_spec(deck_spec)
+    try:
+        admit_assets(deck)
+    except AssetAdmissionError as exc:
+        raise PreviewError(str(exc)) from exc
     asset_paths = [Path(asset["path"]).resolve() for asset in deck["assets"]]
     asset_paths.extend(Path(asset["fallback_path"]).resolve() for asset in deck["assets"] if asset["kind"] == "svg")
-    scene = compile_deck(deck, variants=variants, slide_ids=slide_ids)
-    return render_scene_preview(scene, output, protected_paths=[*protected_paths, *asset_paths])
+    scene = validate_scene_spec(compile_deck(deck, variants=variants, slide_ids=slide_ids))
+    return _publish_scene_preview(
+        scene,
+        output,
+        protected_paths=[*protected_paths, *asset_paths],
+        source_revision=_digest_json({"deck": deck, "scene": scene}),
+    )

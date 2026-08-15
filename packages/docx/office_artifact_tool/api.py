@@ -38,8 +38,8 @@ class DocxArtifactTool:
         output=Path(output);start=time.perf_counter()
         try:
             if output.suffix.lower()!='.docx':raise ArtifactError('validation_failure','output must be .docx')
-            validate_create_model(model)
-            report=atomic_candidate(output,lambda p:render(model,p),lambda p:validate_package(p))
+            validated=validate_create_model(model)
+            report=atomic_candidate(output,lambda p:render(validated,p),lambda p:validate_package(p))
             return {'status':'ok','output':str(output),'sha256':file_sha256(output),'validation':report,'latency_ms':round((time.perf_counter()-start)*1000,3)}
         except ArtifactError as e:return refusal(e.reason,e.details)
         except Exception as e:return refusal('validation_failure',str(e))

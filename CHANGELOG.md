@@ -2,6 +2,15 @@
 
 All notable changes will be documented here.
 
+## 0.4.0 — 2026-08-15
+
+- Added chat-only creation review loops for DOCX, XLSX and PPTX, with complete validated semantic models as the only source of truth.
+- Added closed revision-bound ReviewPackets and native Hermes WebUI display artifacts: escaped structural HTML for DOCX/XLSX and hash-bound SVG/PNG for PPTX.
+- Added Linux directory-atomic DOCX/XLSX/PPTX review replacement with continuous old-or-new visibility, fail-closed pre-commit behavior and honest best-effort post-commit cleanup.
+- Hardened PPTX asset admission with host allowlists, immutable byte snapshots, digest/format/decode/bounds checks and nonblocking special-file refusal.
+- Aligned DOCX/XLSX preview admission with final creation, including canonical XLSX structural references and DOCX style/XML-text validation.
+- Added request-isolated, descriptor-bound Open WebUI adapter methods returning native `display_artifacts`, plus regression, distribution and clean-wheel coverage.
+
 ## 0.3.0 — 2026-08-14
 
 - Added format-local Rich Inspect schema v2 findings with deterministic bounded DOCX story, XLSX worksheet/range and PPTX slide/shape locations.

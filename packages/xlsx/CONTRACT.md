@@ -78,7 +78,11 @@ A structured workbook model supports:
 - column widths, row heights, freeze panes and one auto-filter range;
 - merged ranges only when explicitly declared and non-overlapping.
 
+All creation references use canonical uppercase A1 notation and Excel bounds. Cell and freeze-pane references are single cells (`A1` itself is not a meaningful freeze pane); auto-filter references are one cell or an ordered rectangle; column-width keys are canonical columns `A..XFD`; row-height keys are canonical positive row numbers; merged ranges are ordered, bounded, non-overlapping rectangles. Aliases that an Office library would normalize are refused so preview and final create consume the exact same validated model.
+
 Create does not support charts, pivots, macros, images, external links, conditional formatting, data validation, comments, threaded comments, slicers, PowerQuery, embedded objects, digital signatures, or arbitrary style dictionaries.
+
+Before final create, `render_xlsx_preview(model, output_dir)` may atomically publish a closed `xlsx_chat_review` packet plus one escaped, script-free, bounded HTML grid per visible sheet (maximum 20). Hidden and over-limit sheets are reported, formulas are displayed as text and never evaluated, and each artifact digest binds its published bytes. This is structural review evidence for chat-only iteration, not an Excel application render or editable workbook state.
 
 ## 6. Exact edit primitives
 

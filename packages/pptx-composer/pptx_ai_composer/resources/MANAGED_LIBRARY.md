@@ -59,11 +59,12 @@ The trusted compiler is the only owner of coordinates. Preview and native-PPTX b
 
 The `preview` action compiles the same approved DeckSpec into:
 
+- one closed chat-only `review.json` bound to the canonical DeckSpec + compiled SceneSpec SHA-256;
 - one SVG per slide;
 - one 1280×720 PNG per slide;
-- one manifest with slide IDs, archetypes, variants, limitations, and bounded text-overflow diagnostics.
+- one backend manifest with slide IDs, archetypes, variants, limitations, and bounded text-overflow diagnostics.
 
-The PNG path exists so an LLM/vision critic can immediately inspect the result after each chat revision. Publication is atomic: a reader never sees a directory containing a mix of old and new slides.
+The CLI response exposes the ReviewPacket path and absolute PNG `display_artifacts` so Hermes/Open WebUI can use native media delivery instead of another viewer. The PNG path also exists so an LLM/vision critic can immediately inspect the result after each chat revision. Publication is atomic: a reader never sees a directory containing a mix of old and new slides. Preview artifacts are read-only evidence and never mutate DeckSpec.
 
 ## Claim boundary
 

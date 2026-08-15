@@ -6,8 +6,10 @@ Use only JSON lifecycle calls. Never emit `openpyxl`/Python code, raw OOXML, bar
 
 ```text
 existing workbook: inspect(summary/search) → inspect(region) → plan → apply → validate
-new workbook: create → validate
+new workbook: create model → render_xlsx_preview → chat corrections → approval → create → validate
 ```
+
+`render_xlsx_preview(model, output_dir)` publishes bounded HTML for visible sheets and a closed ReviewPacket. It displays formula text without evaluating it and is not an Excel application render. The host displays the returned artifacts through native media; preview never becomes editable state.
 
 The host must always validate writes. Never overwrite source; output must be a different `.xlsx` path.
 
@@ -30,6 +32,8 @@ Cells are explicit objects. A formula is never a magic value string.
 ```
 
 Styles: `normal|header|currency|percent|date|integer|text`.
+
+Creation references are canonical uppercase A1 notation: cells and `freeze_panes` are single cells, `auto_filter` is a single cell or rectangular range, column-width keys are `A..XFD`, row-height keys are canonical positive row numbers, and merged ranges are ordered non-overlapping rectangles. Invalid or normalized aliases are refused before preview or workbook publication.
 
 ## Plan — exact primitives
 

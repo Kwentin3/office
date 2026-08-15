@@ -22,10 +22,10 @@ The Office package remains provider-agnostic. The Open WebUI layer owns conversa
 Pin a release tag in a slim production image without adding a `git` binary:
 
 ```text
-kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.3.0.zip
+kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.4.0.zip
 ```
 
-For an exact commit, replace `refs/tags/v0.3.0` with its 40-character commit SHA. During local development:
+For an exact commit, replace `refs/tags/v0.4.0` with its 40-character commit SHA. During local development:
 
 ```bash
 python -m pip install -e /path/to/office
@@ -56,7 +56,7 @@ Add the pinned archive dependency to `services/office-artifacts/pyproject.toml`:
 [project]
 requires-python = ">=3.11"
 dependencies = [
-  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.3.0.zip",
+  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.4.0.zip",
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1",
 ]
@@ -78,7 +78,7 @@ Use a directory controlled by the host, for example:
 Required host checks:
 
 1. Derive user/request IDs from authenticated server state, not model text.
-2. Reject traversal, symlinks, device files, and source/output collisions. The Linux/POSIX sidecar adapter performs staging relative to already-open directory descriptors (`dir_fd` + `O_NOFOLLOW`/`O_DIRECTORY`), verifies directory identity after the copy, and deletes the staged file through the original descriptor if a concurrent rename/symlink swap is detected.
+2. Reject traversal, symlinks, device files, and source/output collisions. The Linux/POSIX sidecar adapter performs staging relative to already-open directory descriptors (`dir_fd` + `O_NOFOLLOW`/`O_DIRECTORY`), verifies directory identity after the copy, and deletes the staged file through the original descriptor if a concurrent rename/symlink swap is detected. Chat-review publication likewise keeps its domain directory descriptor open through the complete renderer call and refuses if any bound ancestor changes.
 3. Copy an admitted upload into the request workspace before processing.
 4. Give each request an isolated internal work directory.
 5. Keep output names host-generated or basename-only.
@@ -113,6 +113,70 @@ Select the mode in application code:
 - new semantic deck → `pptx_ai_composer`.
 
 Do not silently fall back from preservation-first editing to creation-first rendering.
+
+## Chat-only creation review loops
+
+The MVP uses Hermes/Open WebUI as the only editing surface. Do not build a second editor in the preview pane.
+
+```text
+chat turn
+→ orchestrator emits a complete revised semantic model
+→ sidecar validates the format-specific model
+→ domain atomically publishes its closed ReviewPacket + structural preview
+→ host registers/displays native HTML or PNG media
+→ next chat turn
+→ after approval, domain exports the Office file from the same model
+```
+
+DOCX and XLSX use separate format-owned HTML preview backends:
+
+```python
+docx_review = service.docx_chat_review(request_id, revised_docx_model)
+xlsx_review = service.xlsx_chat_review(request_id, revised_xlsx_model)
+```
+
+DOCX returns one bounded HTML document preview. XLSX returns one bounded HTML grid per visible sheet, up to its documented review limit; hidden sheets are not displayed and are reported in diagnostics. Both HTML formats escape model content, contain no script or external resources, and expose stable semantic addresses (`block_id`, or sheet name + cell coordinate). They are structural previews, not Word pagination or Excel application rendering. XLSX preview shows formulas as text and never claims recalculation.
+
+The result contains `revision`, `review_contract`, `display_artifacts`, and `interaction: chat_only`. Register each HTML path as a normal attachment or emit its registered/local path through Hermes WebUI native `MEDIA:` handling.
+
+## Chat-only PPTX review loop
+
+The MVP uses Hermes/Open WebUI as the only editing surface. Do not build a second editor in the preview pane.
+
+```text
+chat turn
+→ orchestrator emits a complete revised DeckSpec
+→ sidecar validates DeckSpec
+→ composer atomically publishes ReviewPacket + SVG/PNG
+→ host registers/displays PNG attachments
+→ next chat turn
+```
+
+Call the example adapter with a server-issued request ID:
+
+```python
+review = service.pptx_chat_review(
+    request_id,
+    revised_deck_spec,
+    allowed_asset_paths=tuple(host_approved_asset_paths),
+)
+```
+
+The result contains:
+
+- `revision` — canonical SHA-256 of the exact validated DeckSpec plus compiled preview selection/variants;
+- `review_contract` — absolute path to closed `review.json`;
+- `display_artifacts` — absolute per-slide PNG paths;
+- `interaction: chat_only` — explicit MVP boundary.
+
+For Hermes WebUI, register the PNGs as normal attachments or emit the registered/local paths through its native `MEDIA:` response syntax. Do not add PDF.js, Gotenberg, a custom HTML renderer, direct-edit events, or UI-to-DeckSpec patching to this MVP. The adapter refuses model-selected asset paths unless the authenticated host passes them in `allowed_asset_paths`; the composer then independently verifies every approved file against its declared SHA-256 before publishing review evidence. The structural PNG/SVG review uses labeled placeholders for image nodes and states that limitation in `review.json`; final PPTX export consumes the authenticated raster snapshots.
+
+Ownership remains strict:
+
+- Hermes/Open WebUI: conversation, auth, revisions requested by the user, attachment delivery;
+- PPTX composer: closed DeckSpec, trusted compilation, preview and ReviewPacket;
+- preview: read-only evidence, never mutation;
+- native renderer: final PPTX, never prompt interpretation.
 
 ## Model-facing contract
 
