@@ -56,9 +56,31 @@ The repository does not provide:
 
 Create and preservation-first editing over document stories, paragraphs, tables, rows, and cells. Transaction IDs bind exact semantic targets to a source hash.
 
+The creation path also owns an isolated chat-review backend:
+
+```text
+validated DocSpec
+→ bounded escaped HTML structural preview
+→ closed DOCX ReviewPacket
+→ final DOCX from the same DocSpec after approval
+```
+
+Stable `document_id` and `block_id` values belong to the semantic model. The HTML is review evidence only and never becomes the source of truth.
+
 ### XLSX
 
 Create and preservation-first operations over sheets, bounded rectangular regions, cells, formulas, rows, and managed styles. Formula mode is explicit and recalculation is never fabricated.
+
+The creation path also owns an isolated chat-review backend:
+
+```text
+validated SheetSpec/workbook model
+→ bounded escaped HTML per visible sheet
+→ closed XLSX ReviewPacket
+→ final XLSX from the same model after approval
+```
+
+Sheet names and cell coordinates remain stable review addresses. Preview displays formula text but never evaluates it or claims current cached values.
 
 ### PPTX editor
 
@@ -76,7 +98,11 @@ DeckSpec
 → validator
 ```
 
-`SceneSpec` is private to this creation-first PPTX domain.
+`SceneSpec` is private to this creation-first PPTX domain. The preview backend also publishes a closed `ReviewPacket` for chat orchestration. It contains only the DeckSpec revision, fidelity boundary, bounded diagnostics, and hash-bound SVG/PNG artifact names. Existing review generations are exchanged atomically on Linux; cleanup after that commit point is best effort. Image nodes are labeled placeholders in preview and are rendered from authenticated byte snapshots only by the native PPTX backend. The packet contains no prompt, conversation history, UI event, mutation command, or renderer coordinates.
+
+### Chat/WebUI adapter
+
+The provider-specific adapter is outside every document runtime. It may allocate request workspaces, invoke exactly one domain API, and register returned artifacts. For review publication it retains descriptor-relative authority through the complete domain call and rechecks every bound request ancestor before returning. It must not parse prompts, compile layouts, edit Office files, or translate direct UI manipulation into document mutations. The MVP interaction is chat-only; every visual revision begins with a complete validated domain model.
 
 ### Application witness
 

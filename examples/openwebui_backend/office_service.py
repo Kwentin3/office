@@ -12,13 +12,15 @@ import re
 import shutil
 import stat
 import weakref
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
-from office_artifact_tool import DocxArtifactTool
-from pptx_artifact_tool import PptxArtifactTool
-from xlsx_artifact_tool import XlsxArtifactTool
 from office_application_witness import ApplicationWitness
+from office_artifact_tool import DocxArtifactTool, render_docx_preview
+from pptx_ai_composer.contracts import validate_deck_spec
+from pptx_ai_composer.preview import render_preview
+from pptx_artifact_tool import PptxArtifactTool
+from xlsx_artifact_tool import XlsxArtifactTool, render_xlsx_preview
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _ALLOWED_SUFFIXES = {".docx", ".xlsx", ".pptx"}
@@ -159,6 +161,32 @@ class OfficeService:
             for descriptor in reversed(descriptors):
                 os.close(descriptor)
 
+    @contextmanager
+    def _bound_directory(self, request_id: str, *names: str):
+        """Hold descriptor-relative authority through one publication call."""
+        descriptors: list[int] = []
+        bindings: list[tuple[int, str, int]] = []
+        changed = False
+        try:
+            parent_fd = self._request_fd(request_id)
+            descriptors.append(parent_fd)
+            bindings.append((self._root_fd, request_id, parent_fd))
+            for name in names:
+                child_fd = self._open_directory(parent_fd, name)
+                descriptors.append(child_fd)
+                bindings.append((parent_fd, name, child_fd))
+                parent_fd = child_fd
+            proc_path = Path(f"/proc/self/fd/{parent_fd}")
+            if not proc_path.exists():
+                raise RuntimeError("descriptor-relative workspace paths are unavailable")
+            yield proc_path
+        finally:
+            changed = any(not _same_directory(child_fd, parent_fd, name) for parent_fd, name, child_fd in bindings)
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+            if changed:
+                raise ValueError("workspace changed during publication")
+
     def output_path(self, request_id: str, filename: str) -> Path:
         name = Path(filename)
         if name.name != filename or name.suffix.lower() not in _ALLOWED_SUFFIXES:
@@ -174,8 +202,52 @@ class OfficeService:
     def xlsx_tool(self, request_id: str) -> XlsxArtifactTool:
         return XlsxArtifactTool(self._domain_workdir(request_id, "xlsx"))
 
+    def docx_chat_review(self, request_id: str, model: dict) -> dict:
+        """Publish bounded DOCX review evidence; the host keeps chat state."""
+        with self._bound_directory(request_id, "internal", "docx-preview") as domain:
+            return render_docx_preview(model, domain / "review")
+
+    def xlsx_chat_review(self, request_id: str, model: dict) -> dict:
+        """Publish bounded XLSX review evidence; formulas are never evaluated."""
+        with self._bound_directory(request_id, "internal", "xlsx-preview") as domain:
+            return render_xlsx_preview(model, domain / "review")
+
     def pptx_editor(self, request_id: str) -> PptxArtifactTool:
         return PptxArtifactTool(self._domain_workdir(request_id, "pptx-editor"))
+
+    def pptx_chat_review(
+        self,
+        request_id: str,
+        deck_spec: dict,
+        *,
+        allowed_asset_paths: tuple[str | Path, ...] = (),
+    ) -> dict:
+        """Publish a chat-only review bundle inside one request workspace.
+
+        The host, not model text, supplies the asset allowlist. This adapter does
+        not interpret prompts, mutate DeckSpec, or register attachments.
+        """
+        deck = validate_deck_spec(deck_spec)
+        try:
+            allowed_assets = {Path(path).resolve(strict=True) for path in allowed_asset_paths}
+        except OSError as exc:
+            raise ValueError("preview asset is not host-approved") from exc
+        for asset in deck["assets"]:
+            asset_fields = ["path"]
+            if asset["kind"] == "svg":
+                asset_fields.append("fallback_path")
+            for field in asset_fields:
+                path = Path(asset[field])
+                if path.is_symlink():
+                    raise ValueError("preview asset must not be a symlink")
+                try:
+                    resolved = path.resolve(strict=True)
+                except OSError as exc:
+                    raise ValueError("preview asset is not host-approved") from exc
+                if resolved not in allowed_assets or not resolved.is_file():
+                    raise ValueError("preview asset is not host-approved")
+        with self._bound_directory(request_id, "internal", "pptx-composer-preview") as domain:
+            return render_preview(deck, domain / "review")
 
     def application_witness(self, request_id: str, executable: str | Path) -> ApplicationWitness:
         """Return a clone-only observer with an absolute host-pinned executable."""

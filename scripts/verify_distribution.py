@@ -30,7 +30,9 @@ WHEEL_RUNTIME = {
     "office_artifact_tool/docx/inspect.py",
     "office_artifact_tool/docx/inventory.py",
     "office_artifact_tool/docx/mutation.py",
+    "office_artifact_tool/docx/preview.py",
     "office_artifact_tool/docx/renderer.py",
+    "office_artifact_tool/docx/review_contract.py",
     "office_artifact_tool/docx/template.py",
     "office_artifact_tool/resources/AGENT_SKILL.md",
     "office_artifact_tool/resources/create.schema.json",
@@ -41,11 +43,13 @@ WHEEL_RUNTIME = {
     "xlsx_artifact_tool/api.py",
     "xlsx_artifact_tool/inventory.py",
     "xlsx_artifact_tool/preservation.py",
+    "xlsx_artifact_tool/preview.py",
     "xlsx_artifact_tool/resources/AGENT_SKILL.md",
     "xlsx_artifact_tool/resources/CONTRACT.md",
     "xlsx_artifact_tool/resources/create.schema.json",
     "xlsx_artifact_tool/resources/inventory.schema.json",
     "xlsx_artifact_tool/resources/plan.schema.json",
+    "xlsx_artifact_tool/review_contract.py",
     "xlsx_artifact_tool/template.py",
     "pptx_artifact_tool/__init__.py",
     "pptx_artifact_tool/__main__.py",
@@ -59,11 +63,13 @@ WHEEL_RUNTIME = {
     "pptx_ai_composer/__main__.py",
     "pptx_ai_composer/assets/NotoSans-Regular.ttf",
     "pptx_ai_composer/assets/OFL.txt",
+    "pptx_ai_composer/asset_admission.py",
     "pptx_ai_composer/compiler.py",
     "pptx_ai_composer/contracts.py",
     "pptx_ai_composer/library.py",
     "pptx_ai_composer/preview.py",
     "pptx_ai_composer/renderer.py",
+    "pptx_ai_composer/review_contract.py",
     "pptx_ai_composer/resources/DOMAIN_CONTRACTS.md",
     "pptx_ai_composer/resources/MANAGED_LIBRARY.md",
     "pptx_ai_composer/scene_contract.py",
@@ -73,9 +79,9 @@ WHEEL_RUNTIME = {
     "office_application_witness/api.py",
     "office_application_witness/contracts.py",
 }
-DIST_INFO = "kwentin_office-0.3.0.dist-info"
-WHEEL_FILENAME = "kwentin_office-0.3.0-py3-none-any.whl"
-SDIST_FILENAME = "kwentin_office-0.3.0.tar.gz"
+DIST_INFO = "kwentin_office-0.4.0.dist-info"
+WHEEL_FILENAME = "kwentin_office-0.4.0-py3-none-any.whl"
+SDIST_FILENAME = "kwentin_office-0.4.0.tar.gz"
 WHEEL_METADATA = {
     f"{DIST_INFO}/METADATA",
     f"{DIST_INFO}/WHEEL",
@@ -186,7 +192,7 @@ def metadata_is_valid(payload: bytes) -> bool:
         metadata.get_all(name) == [value]
         for name, value in (
             ("Name", "kwentin-office"),
-            ("Version", "0.3.0"),
+            ("Version", "0.4.0"),
             ("Requires-Python", ">=3.11"),
         )
     )
@@ -291,7 +297,7 @@ def main() -> int:
         or unexpected_wheel
         or missing_sdist
         or unexpected_sdist
-        or sdist_root != "kwentin_office-0.3.0"
+        or sdist_root != "kwentin_office-0.4.0"
         or duplicate_names
         or invalid_console_scripts
         or invalid_metadata
@@ -305,7 +311,7 @@ def main() -> int:
             "distribution verification failed: "
             f"missing_wheel={missing_wheel}, unexpected_wheel={unexpected_wheel}, "
             f"missing_sdist={missing_sdist}, unexpected_sdist={unexpected_sdist}, "
-            f"invalid_sdist_root={sdist_root != 'kwentin_office-0.3.0'}, duplicates={duplicate_names}, "
+            f"invalid_sdist_root={sdist_root != 'kwentin_office-0.4.0'}, duplicates={duplicate_names}, "
             f"invalid_console_scripts={invalid_console_scripts}, invalid_metadata={invalid_metadata}, "
             f"invalid_wheel_metadata={invalid_wheel_metadata}, invalid_record={invalid_record}, "
             f"invalid_top_level={invalid_top_level}, unsafe={bad}, non_files={non_files}"

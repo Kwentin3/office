@@ -22,7 +22,7 @@ No extra top-level fields are allowed.
 4. `apply(source, plan, output)` to write a different output path.
 5. Read `validation`, `diff`, and `audit` from the result. Validation is mandatory and automatic.
 
-For a new document, put the create model inside `{"mode":"create","model":...}` and call `create(model, output)` directly; do not use the edit kernel.
+For a new document, put the create model inside `{"mode":"create","model":...}`. During chat-only authoring, the host calls `render_docx_preview(model, output_dir)` first, displays its `document.html` through native media, and asks for corrections to the complete semantic model. The preview is bounded structural evidence, not Word pagination. Only after approval call `create(model, output)`; do not use the edit kernel.
 
 ## Create model
 
@@ -35,6 +35,8 @@ For a new document, put the create model inside `{"mode":"create","model":...}` 
   {"type":"table","style":"Table Grid","rows":[["Name","Value"],["A","1"]]}
 ]}
 ```
+
+Every text value must be XML-compatible. Paragraph and table style names must already exist in the managed default DOCX template; unknown or caller-created styles are refused before preview or DOCX publication.
 
 ## Plan requests
 

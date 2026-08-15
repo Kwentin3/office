@@ -22,7 +22,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install package and build tools
-        run: python -m pip install --upgrade pip build && python -m pip install -e .
+        run: python -m pip install --upgrade pip build pytest && python -m pip install -e .
+      - name: Run authoritative cross-package tests
+        run: python -m pytest -q --import-mode=importlib
       - name: Run all domain suites
         run: python scripts/test_all.py
       - name: Build wheel and source archive
@@ -34,7 +36,7 @@ jobs:
           python -m venv /tmp/office-wheel
           cd /tmp
           /tmp/office-wheel/bin/python -m pip install --force-reinstall "$GITHUB_WORKSPACE"/dist/*.whl
-          /tmp/office-wheel/bin/python -c "import importlib.metadata as m, importlib.resources as r; import office_artifact_tool, xlsx_artifact_tool, pptx_artifact_tool, pptx_ai_composer, office_application_witness; assert m.version('kwentin-office') == '0.3.0'; assert len([x for x in m.entry_points(group='console_scripts') if x.name.startswith('office-')]) == 5; assert r.files('office_artifact_tool').joinpath('resources/inventory.schema.json').is_file(); assert r.files('xlsx_artifact_tool').joinpath('resources/inventory.schema.json').is_file(); assert r.files('pptx_artifact_tool').joinpath('resources/inventory.schema.json').is_file()"
+          /tmp/office-wheel/bin/python -c "import importlib.metadata as m, importlib.resources as r; import office_artifact_tool, xlsx_artifact_tool, pptx_artifact_tool, pptx_ai_composer, office_application_witness; assert m.version('kwentin-office') == '0.4.0'; assert len([x for x in m.entry_points(group='console_scripts') if x.name.startswith('office-')]) == 5; assert r.files('office_artifact_tool').joinpath('resources/inventory.schema.json').is_file(); assert r.files('xlsx_artifact_tool').joinpath('resources/inventory.schema.json').is_file(); assert r.files('pptx_artifact_tool').joinpath('resources/inventory.schema.json').is_file()"
           /tmp/office-wheel/bin/office-docx --help >/tmp/office-docx.txt
           printf '{"action":"unsupported"}\n' | /tmp/office-wheel/bin/office-xlsx >/tmp/office-xlsx.json
           printf '{"action":"unsupported"}\n' | /tmp/office-wheel/bin/office-pptx-edit >/tmp/office-pptx-edit.json

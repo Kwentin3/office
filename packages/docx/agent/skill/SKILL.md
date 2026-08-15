@@ -36,6 +36,8 @@ For a new document, put the create model inside `{"mode":"create","model":...}` 
 ]}
 ```
 
+Every text value must be XML-compatible. Paragraph and table style names must already exist in the managed default DOCX template; unknown or caller-created styles are refused before preview or DOCX publication.
+
 ## Plan requests
 
 Put every plan request shown below inside `{"mode":"plan","request":...}`. Use exact transaction IDs from the current snapshot.

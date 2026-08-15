@@ -39,6 +39,30 @@ _STYLES={
 }
 _FORMULA_EXTERNAL=re.compile(r"\[[^\]]+\]")
 _FORMULA_DDE=re.compile(r"(?i)^=\s*(?:[a-z_][\w.]*\s*\||ddeauto\s*\()")
+_WORKBOOK_ID=re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+_CELL_REF=re.compile(r"^[A-Z]{1,3}[1-9][0-9]{0,6}$")
+_COLUMN_REF=re.compile(r"^[A-Z]{1,3}$")
+_ROW_REF=re.compile(r"^[1-9][0-9]{0,6}$")
+
+def _single_cell_bounds(value):
+ if not isinstance(value,str) or not _CELL_REF.fullmatch(value):raise ValueError('validation_failure')
+ try:min_col,min_row,max_col,max_row=range_boundaries(value)
+ except Exception as exc:raise ValueError('validation_failure') from exc
+ if None in (min_col,min_row,max_col,max_row) or min_col!=max_col or min_row!=max_row or max_col>16384 or max_row>1048576 or f'{get_column_letter(min_col)}{min_row}'!=value:raise ValueError('validation_failure')
+ return min_col,min_row,max_col,max_row
+
+def _cell_range_bounds(value,*,allow_single):
+ if not isinstance(value,str):raise ValueError('validation_failure')
+ parts=value.split(':')
+ if len(parts) not in ({1,2} if allow_single else {2}):raise ValueError('validation_failure')
+ first=_single_cell_bounds(parts[0]);last=_single_cell_bounds(parts[-1])
+ min_col,min_row=first[0],first[1];max_col,max_row=last[2],last[3]
+ if min_col>max_col or min_row>max_row:raise ValueError('validation_failure')
+ canonical=f'{get_column_letter(min_col)}{min_row}'
+ if len(parts)==2:canonical+=f':{get_column_letter(max_col)}{max_row}'
+ if canonical!=value:raise ValueError('validation_failure')
+ return min_col,min_row,max_col,max_row
+
 def _parse_xml(payload:bytes):
  if b'<!DOCTYPE' in payload or b'<!ENTITY' in payload:raise ValueError('validation_failure')
  root=etree.fromstring(payload,parser=etree.XMLParser(resolve_entities=False,no_network=True,huge_tree=False));info=root.getroottree().docinfo
@@ -207,6 +231,54 @@ def _style_matches(cell,name):
   if cell.fill.fill_type!=expected['fill'].fill_type or actual_color.type!=expected_color.type or actual_color.rgb!=expected_color.rgb:return False
  return True
 
+def validate_create_model(model:dict[str,Any])->dict[str,Any]:
+ """Validate and defensively copy the closed XLSX create model."""
+ if not isinstance(model,dict) or set(model) not in ({'sheets'},{'workbook_id','sheets'}):raise ValueError('validation_failure')
+ if 'workbook_id' in model and (not isinstance(model['workbook_id'],str) or not _WORKBOOK_ID.fullmatch(model['workbook_id'])):raise ValueError('validation_failure')
+ sheets=model['sheets']
+ if not isinstance(sheets,list) or not sheets or len(sheets)>256:raise ValueError('validation_failure')
+ if sum(len(spec.get('cells',{})) if isinstance(spec,dict) and isinstance(spec.get('cells'),dict) else 0 for spec in sheets)>250000:raise ValueError('unsafe_plan')
+ allowed_sheet={'name','cells','freeze_panes','auto_filter','state','column_widths','row_heights','merged_ranges'};names=[]
+ for spec in sheets:
+  if not isinstance(spec,dict) or not {'name','cells'}<=set(spec) or set(spec)-allowed_sheet or not isinstance(spec['name'],str) or not spec['name'] or len(spec['name'])>31 or any(ch in spec['name'] for ch in '[]:*?/\\') or not isinstance(spec['cells'],dict):raise ValueError('validation_failure')
+  names.append(spec['name'])
+ if len(names)!=len(set(names)) or not any(spec.get('state','visible')=='visible' for spec in sheets):raise ValueError('validation_failure')
+ for spec in sheets:
+  if spec.get('state','visible') not in {'visible','hidden','veryHidden'}:raise ValueError('validation_failure')
+  column_widths=spec.get('column_widths',{});row_heights=spec.get('row_heights',{})
+  if not isinstance(column_widths,dict) or not isinstance(row_heights,dict):raise ValueError('validation_failure')
+  dimensions=[*column_widths.values(),*row_heights.values()]
+  if any(not isinstance(value,(int,float)) or isinstance(value,bool) or not math.isfinite(value) or value<=0 for value in dimensions):raise ValueError('validation_failure')
+  for column in column_widths:
+   if not isinstance(column,str) or not _COLUMN_REF.fullmatch(column):raise ValueError('validation_failure')
+   if _single_cell_bounds(f'{column}1')[0]>16384:raise ValueError('validation_failure')
+  for row in row_heights:
+   if not isinstance(row,str) or not _ROW_REF.fullmatch(row):raise ValueError('validation_failure')
+   row_number=int(row)
+   if row_number<1 or row_number>1048576:raise ValueError('validation_failure')
+  for coordinate,payload in spec['cells'].items():
+   if not isinstance(payload,dict) or set(payload)-{'value','formula','style'} or ('value' in payload)==('formula' in payload) or payload.get('style','normal') not in _STYLES:raise ValueError('validation_failure')
+   _single_cell_bounds(coordinate)
+   if 'formula' in payload:
+    if not _safe_formula(payload['formula']):raise ValueError('validation_failure')
+   else:
+    value=payload['value']
+    if not _explicit_scalar(value) or isinstance(value,str) and len(value)>32767:raise ValueError('validation_failure')
+  freeze_panes=spec.get('freeze_panes')
+  if freeze_panes is not None:
+   _single_cell_bounds(freeze_panes)
+   if freeze_panes=='A1':raise ValueError('validation_failure')
+  auto_filter=spec.get('auto_filter')
+  if auto_filter is not None:_cell_range_bounds(auto_filter,allow_single=True)
+  merged=spec.get('merged_ranges',[])
+  if not isinstance(merged,list) or len(merged)>10000 or any(not isinstance(item,str) for item in merged):raise ValueError('validation_failure')
+  merged_bounds=[]
+  for item in merged:
+   bounds=_cell_range_bounds(item,allow_single=False)
+   if any(not (bounds[2]<other[0] or other[2]<bounds[0] or bounds[3]<other[1] or other[3]<bounds[1]) for other in merged_bounds):raise ValueError('validation_failure')
+   merged_bounds.append(bounds)
+ return copy.deepcopy(model)
+
 
 def _snapshot(path:Path,view='region',sheet=None,range_ref=None):
  _admit(path);source=_sha(path);wb=load_workbook(path,data_only=False)
@@ -234,34 +306,18 @@ class XlsxArtifactTool:
   output=Path(output)
   try:
    if output.suffix.lower()!='.xlsx':raise ValueError('validation_failure')
-   if not isinstance(model,dict) or set(model)!={'sheets'} or not isinstance(model['sheets'],list) or not model['sheets'] or len(model['sheets'])>256:raise ValueError('validation_failure')
-   if sum(len(spec.get('cells',{})) if isinstance(spec,dict) and isinstance(spec.get('cells'),dict) else 0 for spec in model['sheets'])>250000:raise ValueError('unsafe_plan')
-   allowed_sheet={'name','cells','freeze_panes','auto_filter','state','column_widths','row_heights','merged_ranges'};names=[]
-   for spec in model['sheets']:
-    if not isinstance(spec,dict) or not {'name','cells'}<=set(spec) or set(spec)-allowed_sheet or not isinstance(spec['name'],str) or not spec['name'] or len(spec['name'])>31 or any(ch in spec['name'] for ch in '[]:*?/\\') or not isinstance(spec['cells'],dict):raise ValueError('validation_failure')
-    names.append(spec['name'])
-   if len(names)!=len(set(names)):raise ValueError('validation_failure')
-   for spec in model['sheets']:
-    column_widths=spec.get('column_widths',{})
-    row_heights=spec.get('row_heights',{})
-    if not isinstance(column_widths,dict) or not isinstance(row_heights,dict):raise ValueError('validation_failure')
-    dimensions=[*column_widths.values(),*row_heights.values()]
-    if any(not isinstance(value,(int,float)) or isinstance(value,bool) or not math.isfinite(value) or value<=0 for value in dimensions):raise ValueError('validation_failure')
+   model=validate_create_model(model)
    def build(path):
     wb=Workbook();wb.remove(wb.active)
     sheets=model['sheets']
     for spec in sheets:
      ws=wb.create_sheet(spec['name'])
      for coordinate,payload in spec.get('cells',{}).items():
-      if not isinstance(coordinate,str) or not isinstance(payload,dict) or set(payload)-{'value','formula','style'} or ('value' in payload)==('formula' in payload):raise ValueError('validation_failure')
       cell=ws[coordinate]
       if 'formula' in payload:
-       if not _safe_formula(payload['formula']):raise ValueError('external_reference')
        cell.value=payload['formula']
       else:
-       value=payload['value']
-       if not _explicit_scalar(value) or isinstance(value,str) and len(value)>32767:raise ValueError('validation_failure')
-       cell.value=value
+       cell.value=payload['value']
       _apply_style(cell,payload.get('style','normal'))
      if spec.get('freeze_panes') is not None:ws.freeze_panes=spec['freeze_panes']
      if spec.get('auto_filter') is not None:ws.auto_filter.ref=spec['auto_filter']

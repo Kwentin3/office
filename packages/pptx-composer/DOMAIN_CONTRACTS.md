@@ -145,7 +145,7 @@ Why `DeckSpec` currently combines approved slide content with brand data: it is 
 
 ## C6. `AssetRecord` — asset domain
 
-**Runtime status:** partially implemented as the `assets` section of `DeckSpec`.
+**Runtime status:** implemented by the `assets` section of `DeckSpec` and the shared `asset_admission.py` boundary.
 
 Raster record:
 
@@ -168,11 +168,16 @@ SVG record additionally requires:
 }
 ```
 
-Current SVG claim boundary:
+Current asset claim boundary:
 
-- SVG source is hash-bound and checked for active content/external references;
-- `python-pptx` cannot ingest it directly in this environment;
-- renderer embeds the PNG fallback;
+- both preview and native rendering snapshot each declared asset once through a non-blocking, no-symlink descriptor, immediately reject non-regular files, and authenticate the snapshot against `sha256` before publication;
+- each source or fallback is at most 20 MiB; decoded raster dimensions are at most `8192 × 8192` and 40 million pixels;
+- PNG/JPEG bytes must fully decode and match the declared kind;
+- SVG source is hash-bound and checked for active content/external references through the same admission boundary;
+- SVG fallback is independently authenticated, fully decoded and required to be PNG;
+- admission returns immutable byte snapshots, and native rendering embeds those snapshots without reopening caller-controlled paths;
+- `python-pptx` cannot ingest SVG directly in this environment;
+- renderer embeds the authenticated PNG fallback snapshot;
 - vector editability is `not_supported`, not implied.
 
 ## C7. `ValidationReport` — validation domain
@@ -188,6 +193,43 @@ Top-level gates:
 - `application`.
 
 Statuses are explicit. Unavailable visual/application gates remain `not_executed`; they never inherit PASS from parser openability.
+
+## C8. `ReviewPacket` — preview/orchestration boundary
+
+**Runtime status:** implemented in `pptx_ai_composer/review_contract.py`; published as `review.json` by `preview.py`.
+
+```json
+{
+  "contract_version": "1.0",
+  "kind": "pptx_chat_review",
+  "interaction": "chat_only",
+  "deck_id": "deck_demo",
+  "revision": "<canonical validated source bundle SHA-256>",
+  "fidelity": "structural_preview_not_powerpoint_render",
+  "limitations": [],
+  "diagnostics": {"text_overflow": []},
+  "slides": [
+    {
+      "slide_id": "problem",
+      "number": 1,
+      "png_file": "slide-01.png",
+      "png_sha256": "...",
+      "svg_file": "slide-01.svg",
+      "svg_sha256": "..."
+    }
+  ]
+}
+```
+
+Invariants:
+
+- the contract is closed recursively and validated before atomic publication;
+- `revision` is computed inside the trusted preview boundary and is not caller-overridable: the conversational `render_preview`/CLI path binds the exact validated DeckSpec and compiled preview SceneSpec, while the isolated low-level `render_scene_preview` API binds its validated SceneSpec only;
+- neither revision includes conversation text or a mutable file path;
+- artifacts are local basenames and are independently hash-bound;
+- interaction is chat-only: no direct-edit events, prompts, UI state, coordinates or mutation instructions;
+- the host owns chat state, auth, attachment registration and retention;
+- preview is evidence only; every conversational revision starts from a newly validated DeckSpec, while the low-level scene API starts from a newly validated SceneSpec.
 
 ## Current public runtime surface
 

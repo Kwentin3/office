@@ -66,9 +66,29 @@ python -m unittest discover -s packages/pptx-composer/tests -t packages/pptx-com
 The public JSON-lines surface now includes:
 
 - `catalog` — inspect managed components/archetypes and their lifecycle state;
-- `preview` — compile the same DeckSpec into atomically published per-slide SVG/PNG artifacts and bounded diagnostics;
+- `preview` — compile the same DeckSpec into an atomically published chat-review bundle;
 - `render` — create the native editable PPTX;
 - `validate` — run the available PPTX gates.
+
+The MVP interaction is intentionally chat-only:
+
+```text
+Hermes chat revises DeckSpec
+→ preview publishes ReviewPacket + per-slide SVG/PNG
+→ Hermes WebUI displays the PNGs with its native MEDIA support
+→ user and LLM review
+→ the next chat turn revises DeckSpec again
+```
+
+`DeckSpec` is the only source of truth. Preview artifacts are read-only evidence and never mutate the model. The renderer does not receive prompts, conversation history, UI events, or arbitrary coordinates.
+
+Each preview directory contains:
+
+- `review.json` — closed `pptx_chat_review` V1 contract;
+- `manifest.json` — backend-oriented structural manifest;
+- one SVG and one 1280×720 PNG per selected slide.
+
+The ReviewPacket is bound to the exact validated DeckSpec plus compiled preview selection/variants by a canonical SHA-256 `revision`. Before publication, preview admits every declared asset through the same boundary as native rendering: it opens paths non-blocking without following symlinks, immediately rejects non-regular files, snapshots and hash-authenticates bounded files, fully decodes PNG/JPEG bytes with declared-format checks, sanitizes SVG, and independently validates its PNG fallback. Native rendering consumes the admitted immutable bytes rather than reopening caller-controlled paths. The packet declares `interaction: chat_only`, carries bounded diagnostics and hash-binds every SVG/PNG. The CLI response returns `review_contract` and absolute `display_artifacts`; a Hermes/Open WebUI adapter should register or display those files rather than building another viewer.
 
 Example preview request:
 

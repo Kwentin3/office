@@ -33,7 +33,7 @@ VALID_ENTRY_POINTS = (
     b"office-pptx-compose = pptx_ai_composer.__main__:main\n"
     b"office-witness = office_application_witness.__main__:main\n"
 )
-VALID_METADATA = b"Metadata-Version: 2.4\nName: kwentin-office\nVersion: 0.3.0\nRequires-Python: >=3.11\n"
+VALID_METADATA = b"Metadata-Version: 2.4\nName: kwentin-office\nVersion: 0.4.0\nRequires-Python: >=3.11\n"
 VALID_WHEEL = b"Wheel-Version: 1.0\nGenerator: kwentin-tests\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
 VALID_TOP_LEVEL = b"\n".join(name.encode() for name in sorted(VERIFIER.REQUIRED_TOP_LEVEL)) + b"\n"
 
@@ -59,8 +59,8 @@ class DistributionVerifierTests(unittest.TestCase):
         extra_wheel: str | None = None,
         extra_sdist: str | None = None,
         duplicate_wheel: str | None = None,
-        wheel_name: str = "kwentin_office-0.3.0-py3-none-any.whl",
-        sdist_name: str = "kwentin_office-0.3.0.tar.gz",
+        wheel_name: str = "kwentin_office-0.4.0-py3-none-any.whl",
+        sdist_name: str = "kwentin_office-0.4.0.tar.gz",
     ) -> None:
         wheel = self.dist / wheel_name
         members = sorted(WHEEL_MEMBERS - ({omit_wheel} if omit_wheel else set()))
@@ -103,12 +103,12 @@ class DistributionVerifierTests(unittest.TestCase):
         with tarfile.open(sdist, "w:gz") as archive:
             for suffix in sorted(SDIST_MEMBERS - ({omit_sdist} if omit_sdist else set())):
                 payload = b"x"
-                info = tarfile.TarInfo(f"kwentin_office-0.3.0/{suffix}")
+                info = tarfile.TarInfo(f"kwentin_office-0.4.0/{suffix}")
                 info.size = len(payload)
                 archive.addfile(info, BytesIO(payload))
             if extra_sdist:
                 payload = b"x"
-                info = tarfile.TarInfo(f"kwentin_office-0.3.0/{extra_sdist}")
+                info = tarfile.TarInfo(f"kwentin_office-0.4.0/{extra_sdist}")
                 info.size = len(payload)
                 archive.addfile(info, BytesIO(payload))
 
@@ -146,7 +146,7 @@ class DistributionVerifierTests(unittest.TestCase):
 
     def test_metadata_and_top_level_contents_are_closed(self) -> None:
         for kwargs in (
-            {"metadata": VALID_METADATA.replace(b"Version: 0.3.0", b"Version: 9.9.9")},
+            {"metadata": VALID_METADATA.replace(b"Version: 0.4.0", b"Version: 9.9.9")},
             {"top_level": b"office_artifact_tool\n"},
         ):
             with self.subTest(kwargs=kwargs):
@@ -174,9 +174,9 @@ class DistributionVerifierTests(unittest.TestCase):
 
     def test_artifact_filenames_are_bound_to_name_version_and_tag(self) -> None:
         for kwargs in (
-            {"wheel_name": "renamed-0.3.0-py3-none-any.whl"},
-            {"wheel_name": "kwentin_office-0.3.0-cp312-cp312-manylinux_2_17_x86_64.whl"},
-            {"sdist_name": "renamed-0.3.0.tar.gz"},
+            {"wheel_name": "renamed-0.4.0-py3-none-any.whl"},
+            {"wheel_name": "kwentin_office-0.4.0-cp312-cp312-manylinux_2_17_x86_64.whl"},
+            {"sdist_name": "renamed-0.4.0.tar.gz"},
             {"sdist_name": "kwentin_office-9.9.9.tar.gz"},
         ):
             with self.subTest(kwargs=kwargs):
@@ -202,6 +202,11 @@ class DistributionVerifierTests(unittest.TestCase):
             version = tomllib.load(stream)["project"]["version"]
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertIn(f"m.version('kwentin-office') == '{version}'", workflow)
+
+    def test_ci_installs_and_runs_authoritative_pytest_suite(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn("pip install --upgrade pip build pytest", workflow)
+        self.assertIn("python -m pytest -q --import-mode=importlib", workflow)
 
 
 if __name__ == "__main__":

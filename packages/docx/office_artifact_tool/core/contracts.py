@@ -1,32 +1,87 @@
 from __future__ import annotations
+
+import copy
 import math
+import re
+from functools import lru_cache
 from typing import Any
+
+from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
+
 from .errors import ArtifactError
 
-_CREATE_KEYS={'heading':{'type','level','text'},'paragraph':{'type','text','style'},'numbered_list':{'type','items'},'bulleted_list':{'type','items'},'table':{'type','style','rows'}}
+_IDENTIFIER = re.compile(r'^[A-Za-z][A-Za-z0-9_.-]{0,63}$')
+_CREATE_KEYS={'heading':{'type','block_id','level','text'},'paragraph':{'type','block_id','text','style'},'numbered_list':{'type','block_id','items'},'bulleted_list':{'type','block_id','items'},'table':{'type','block_id','style','rows'}}
 _OPERATION_KEYS={'replace_text':{'type','target_id','old','new'},'insert_paragraph_after':{'type','target_id','text','copy_properties'},'set_cell_text':{'type','target_id','text'},'clone_row_after':{'type','target_id','cell_texts'},'reorder_rows':{'type','table_id','row_ids'},'delete_row':{'type','target_id'}}
 _TRANSFORM_KEYS={'sort_rows':{'type','table_id','row_ids','keys_by_row_id','keys','descending','prefix_row_ids','suffix_row_ids'},'table_totals':{'type','rows','grand_total_target_id'},'fill_missing':{'type','items','replacement'},'bulk_replace':{'type','items'}}
+
+
+def _is_xml_text(value: str) -> bool:
+    return all(
+        code in (0x09, 0x0A, 0x0D)
+        or 0x20 <= code <= 0xD7FF
+        or 0xE000 <= code <= 0xFFFD
+        or 0x10000 <= code <= 0x10FFFF
+        for code in map(ord, value)
+    )
+
+
+@lru_cache(maxsize=1)
+def _default_style_names() -> tuple[frozenset[str], frozenset[str]]:
+    document = Document()
+    paragraph = frozenset(style.name for style in document.styles if style.type == WD_STYLE_TYPE.PARAGRAPH)
+    table = frozenset(style.name for style in document.styles if style.type == WD_STYLE_TYPE.TABLE)
+    return paragraph, table
+
 
 def closed_keys(value:dict[str,Any],allowed:set[str],required:set[str],name:str)->None:
     if set(value)-allowed or not required<=set(value):raise ArtifactError('validation_failure',f'invalid {name} fields')
 
-def validate_create_model(model:Any)->None:
+def validate_create_model(model:Any)->dict[str,Any]:
     if not isinstance(model,dict):raise ArtifactError('validation_failure','create model must be object')
-    closed_keys(model,{'metadata','blocks'},{'blocks'},'create model')
+    closed_keys(model,{'document_id','metadata','blocks'},{'blocks'},'create model')
+    if 'document_id' in model and (not isinstance(model['document_id'],str) or not _IDENTIFIER.fullmatch(model['document_id'])):raise ArtifactError('validation_failure','invalid document_id')
     if 'metadata' in model:
-        if not isinstance(model['metadata'],dict) or set(model['metadata'])-{'title','subject','author','keywords','comments'} or not all(isinstance(x,str) for x in model['metadata'].values()):raise ArtifactError('validation_failure','invalid metadata')
+        if not isinstance(model['metadata'],dict) or set(model['metadata'])-{'title','subject','author','keywords','comments'} or not all(isinstance(x,str) and _is_xml_text(x) for x in model['metadata'].values()):raise ArtifactError('validation_failure','invalid metadata')
     if not isinstance(model['blocks'],list):raise ArtifactError('validation_failure','blocks must be list')
     if len(model['blocks'])>1000:raise ArtifactError('unsafe_plan','create block budget exceeded')
+    block_ids:set[str]=set()
     for block in model['blocks']:
         if not isinstance(block,dict) or block.get('type') not in _CREATE_KEYS:raise ArtifactError('unsupported_capability','unsupported create block')
         kind=block['type'];required={'type','text'} if kind in {'heading','paragraph'} else {'type','items'} if kind.endswith('_list') else {'type','rows'}
         closed_keys(block,_CREATE_KEYS[kind],required,kind)
-        if kind.endswith('_list'):
-            if not isinstance(block['items'],list) or not block['items'] or len(block['items'])>10000 or not all(isinstance(x,str) for x in block['items']):raise ArtifactError('validation_failure','invalid list items')
+        if 'block_id' in block:
+            block_id=block['block_id']
+            if not isinstance(block_id,str) or not _IDENTIFIER.fullmatch(block_id) or block_id in block_ids:raise ArtifactError('validation_failure','block_id must be a unique stable identifier')
+            block_ids.add(block_id)
+        if kind == 'heading':
+            level = block.get('level', 1)
+            if (
+                not isinstance(block['text'], str)
+                or not _is_xml_text(block['text'])
+                or isinstance(level, bool)
+                or not isinstance(level, int)
+                or not 1 <= level <= 9
+            ):
+                raise ArtifactError('validation_failure', 'invalid heading')
+        elif kind == 'paragraph':
+            style = block.get('style')
+            paragraph_styles, _ = _default_style_names()
+            if (
+                not isinstance(block['text'], str)
+                or not _is_xml_text(block['text'])
+                or (style is not None and (not isinstance(style, str) or style not in paragraph_styles))
+            ):
+                raise ArtifactError('validation_failure', 'invalid paragraph')
+        elif kind.endswith('_list'):
+            if not isinstance(block['items'],list) or not block['items'] or len(block['items'])>10000 or not all(isinstance(x,str) and _is_xml_text(x) for x in block['items']):raise ArtifactError('validation_failure','invalid list items')
         elif kind=='table':
-            rows=block['rows']
+            rows=block['rows'];style=block.get('style','Table Grid');_, table_styles = _default_style_names()
+            if not isinstance(style,str) or style not in table_styles:raise ArtifactError('validation_failure','invalid table style')
             if not isinstance(rows,list) or not rows or len(rows)>10000 or not all(isinstance(row,list) and row and len(row)<=1000 for row in rows):raise ArtifactError('validation_failure','invalid table rows')
-            if sum(len(row) for row in rows)>100000 or not all(isinstance(value,(str,int,float,bool)) and not (isinstance(value,float) and not math.isfinite(value)) for row in rows for value in row):raise ArtifactError('validation_failure','table cells must be finite scalar values')
+            if sum(len(row) for row in rows)>100000 or not all(isinstance(value,(str,int,float,bool)) and (not isinstance(value,str) or _is_xml_text(value)) and not (isinstance(value,float) and not math.isfinite(value)) for row in rows for value in row):raise ArtifactError('validation_failure','table cells must be finite XML-compatible scalar values')
+    return copy.deepcopy(model)
 
 def validate_plan_request(request:Any)->None:
     if not isinstance(request,dict) or len(set(request)&{'operations','intents','transform'})!=1 or set(request)-{'operations','intents','transform'}:raise ArtifactError('validation_failure','request must contain exactly one mode')

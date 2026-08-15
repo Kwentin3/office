@@ -1,12 +1,17 @@
 import hashlib
+import io
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
+
 from PIL import Image
 from pptx import Presentation
-
+from pptx_ai_composer.asset_admission import admit_assets
 from pptx_ai_composer.compiler import compile_deck
 from pptx_ai_composer.renderer import RenderError, render_deck, render_scene_presentation
 
@@ -57,6 +62,24 @@ class NativeRendererTests(unittest.TestCase):
             "path": str(image),
             "sha256": digest,
             "alt_text": "Warm abstract field",
+        }]
+        spec["slides"][0]["asset_id"] = "hero"
+
+        render_deck(spec, self.output)
+
+        prs = Presentation(self.output)
+        self.assertTrue(any(shape.shape_type == 13 for shape in prs.slides[0].shapes))
+
+    def test_renders_hash_bound_jpeg_asset(self):
+        image = self.root / "hero.jpg"
+        Image.new("RGB", (320, 180), "#D95D39").save(image, "JPEG")
+        spec = self.spec()
+        spec["assets"] = [{
+            "asset_id": "hero",
+            "kind": "jpeg",
+            "path": str(image),
+            "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+            "alt_text": "Warm JPEG field",
         }]
         spec["slides"][0]["asset_id"] = "hero"
 
@@ -143,6 +166,83 @@ class NativeRendererTests(unittest.TestCase):
             render_deck(spec, self.output)
         self.assertFalse(self.output.exists())
 
+    def test_refuses_hash_bound_non_image_with_typed_error(self):
+        image = self.root / "hero.png"
+        image.write_bytes(b"this is not a PNG")
+        spec = self.spec()
+        spec["assets"] = [{
+            "asset_id": "hero",
+            "kind": "png",
+            "path": str(image),
+            "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+            "alt_text": "Not really an image",
+        }]
+        spec["slides"][0]["asset_id"] = "hero"
+
+        with self.assertRaisesRegex(RenderError, "invalid raster asset: hero"):
+            render_deck(spec, self.output)
+
+        self.assertFalse(self.output.exists())
+
+    def test_refuses_fifo_asset_without_blocking_or_publishing_pptx(self):
+        asset = self.root / "hero.png"
+        os.mkfifo(asset)
+        probe = """
+import sys
+from pathlib import Path
+from pptx_ai_composer.renderer import RenderError, render_deck
+from tests.fixtures import valid_deck_spec
+
+deck = valid_deck_spec()
+deck["assets"] = [{
+    "asset_id": "hero", "kind": "png", "path": sys.argv[1],
+    "sha256": "0" * 64, "alt_text": "Hero",
+}]
+deck["slides"][0]["asset_id"] = "hero"
+try:
+    render_deck(deck, Path(sys.argv[2]))
+except RenderError as exc:
+    if str(exc) != "asset is missing or unsafe: hero":
+        raise
+else:
+    raise AssertionError("FIFO asset was accepted")
+"""
+        subprocess.run(
+            [sys.executable, "-c", probe, str(asset), str(self.output)],
+            cwd=Path(__file__).parent.parent,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        self.assertFalse(self.output.exists())
+
+    def test_embeds_authenticated_snapshot_if_source_path_is_replaced(self):
+        image = self.root / "hero.png"
+        Image.new("RGB", (32, 32), "red").save(image)
+        spec = self.spec()
+        spec["assets"] = [{
+            "asset_id": "hero",
+            "kind": "png",
+            "path": str(image),
+            "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+            "alt_text": "Authenticated red square",
+        }]
+        spec["slides"][0]["asset_id"] = "hero"
+
+        def admit_then_replace(deck):
+            admitted = admit_assets(deck)
+            Image.new("RGB", (32, 32), "blue").save(image)
+            return admitted
+
+        with patch("pptx_ai_composer.renderer.admit_assets", side_effect=admit_then_replace):
+            render_deck(spec, self.output)
+
+        with zipfile.ZipFile(self.output) as package:
+            media_name = next(name for name in package.namelist() if name.startswith("ppt/media/"))
+            with Image.open(io.BytesIO(package.read(media_name))) as embedded:
+                self.assertEqual(embedded.convert("RGB").getpixel((0, 0)), (255, 0, 0))
+
     def test_does_not_publish_when_candidate_validator_rejects(self):
         with patch("pptx_ai_composer.renderer._candidate_gate", return_value={"status": "invalid"}):
             with self.assertRaisesRegex(RenderError, "candidate validation failed"):
@@ -154,6 +254,18 @@ class NativeRendererTests(unittest.TestCase):
         spec_path.write_text("{}", encoding="utf-8")
         with self.assertRaisesRegex(RenderError, "output must not overwrite"):
             render_deck(valid_deck_spec(), spec_path, protected_paths=[spec_path])
+
+    def test_refuses_symlink_output_without_overwriting_external_target(self):
+        outside = self.root / "outside.txt"
+        outside.write_text("keep", encoding="utf-8")
+        linked_output = self.root / "linked.pptx"
+        linked_output.symlink_to(outside)
+
+        with self.assertRaisesRegex(RenderError, "symlink"):
+            render_deck(self.spec(), linked_output)
+
+        self.assertTrue(linked_output.is_symlink())
+        self.assertEqual(outside.read_text(encoding="utf-8"), "keep")
 
     def test_refuses_output_collision_with_asset_path(self):
         asset = self.root / "asset.png"
@@ -167,6 +279,26 @@ class NativeRendererTests(unittest.TestCase):
         before = asset.read_bytes()
         with self.assertRaisesRegex(RenderError, "asset path"):
             render_deck(deck, asset)
+        self.assertEqual(asset.read_bytes(), before)
+
+    def test_refuses_symlinked_output_parent_without_overwriting_asset(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        asset = outside / "asset.png"
+        Image.new("RGB", (40, 40), "red").save(asset)
+        linked_parent = self.root / "linked-parent"
+        linked_parent.symlink_to(outside, target_is_directory=True)
+        deck = valid_deck_spec()
+        deck["assets"] = [{
+            "asset_id": "hero", "kind": "png", "path": str(asset),
+            "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(), "alt_text": "Hero",
+        }]
+        deck["slides"][0]["asset_id"] = "hero"
+        before = asset.read_bytes()
+
+        with self.assertRaisesRegex(RenderError, "symlink"):
+            render_deck(deck, linked_parent / asset.name)
+
         self.assertEqual(asset.read_bytes(), before)
 
     def test_scene_backend_builds_presentation_without_semantic_deck(self):

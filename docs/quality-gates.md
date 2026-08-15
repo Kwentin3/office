@@ -1,24 +1,24 @@
 # Quality gates
 
-## v0.3.0 bounded evidence
+## v0.4.0 bounded evidence
 
 | Domain | Local suite | Independent exact-tree gate | Application evidence |
 |---|---:|---|---|
-| DOCX | 56/56 | required before tag | preservation matrix + fake-soffice contract |
-| XLSX | 59/59 | required before tag | preservation matrix + hermetic cached-value gate |
+| DOCX | 56/56 | required before tag | preservation matrix + fake-soffice contract + chat review |
+| XLSX | 75/75 | required before tag | preservation matrix + cached-value gate + chat review |
 | PPTX editor | 44/44 | required before tag | preservation matrix + fake-soffice contract |
-| PPTX composer | 66/66 | unchanged creation-first domain | structural preview only |
+| PPTX composer | 92/92 | required before tag | hash-bound SVG/PNG structural preview only |
 | Application Witness | 28/28 | required before tag | hermetic fake executable |
-| Repository integration | 30/30 | required before tag | manual workflow contract only |
+| Repository integration | 40/40 | required before tag | descriptor-bound WebUI adapter + manual workflow contract |
 
-Current local total: **282/282 tests passed**. The repository CI reruns the packaged source rather than trusting these counts.
+`scripts/test_all.py` passes **335/335** unittest cases. The authoritative cross-package pytest run passes **352/352 tests plus 314 subtests**. Repository CI runs both suites on Python 3.11 and 3.12, then verifies the built archives and a clean wheel installation.
 
-Distribution evidence for the v0.3.0 candidate:
+Distribution evidence for the v0.4.0 candidate:
 
 - wheel and sdist built into an external temporary directory from the candidate tree;
-- fail-closed verifier passed with 64 wheel members and 187 sdist members;
+- fail-closed verifier passed with 70 wheel members and 198 sdist members;
 - all five console scripts, three packaged inventory schemas, domain imports and clone-only Witness remain required by the verifier;
-- changed/new v0.3.0 modules pass targeted Ruff and repository-wide compileall;
+- changed/new v0.4.0 modules pass targeted Ruff and repository-wide compileall;
 - whole-repository Ruff remains historical style debt and is not a CI/release gate for this bounded feature release.
 
 ## What a local PASS means

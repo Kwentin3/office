@@ -3,8 +3,9 @@
 ## DOCX — `office_artifact_tool`
 
 ```python
-from office_artifact_tool import DocxArtifactTool
+from office_artifact_tool import DocxArtifactTool, render_docx_preview
 
+preview = render_docx_preview(model, preview_directory)
 tool = DocxArtifactTool(workspace)
 tool.create(model, output)
 tool.inspect(source, view="full", query=None)
@@ -19,8 +20,9 @@ CLI: `office-docx`. Full model/operation examples: `packages/docx/AGENT_SKILL.md
 ## XLSX — `xlsx_artifact_tool`
 
 ```python
-from xlsx_artifact_tool import XlsxArtifactTool
+from xlsx_artifact_tool import XlsxArtifactTool, render_xlsx_preview
 
+preview = render_xlsx_preview(model, preview_directory)
 tool = XlsxArtifactTool(workdir)
 tool.create(model, output)
 tool.inspect(source, view="summary", sheet=None, range_ref=None, query=None)
@@ -31,6 +33,8 @@ tool.validate(source, before=None)
 ```
 
 CLI: `office-xlsx` using one JSON request on stdin. Full contract: `packages/xlsx/CONTRACT.md`.
+
+`render_docx_preview` and `render_xlsx_preview` atomically publish closed `review.json` packets and bounded HTML structural previews. Existing-review replacement uses Linux `renameat2(RENAME_EXCHANGE)` so readers never observe a missing publication directory; an unavailable atomic-exchange primitive refuses the replacement and preserves the prior review. Their revision is computed from the complete validated semantic model, while artifact SHA-256 values bind the actual published HTML bytes. The HTML is escaped, script-free review evidence for native Hermes/Open WebUI media display; it is not Word pagination or an Excel application render. Formula text may be shown but is never evaluated by preview.
 
 ## Preservation-first PPTX — `pptx_artifact_tool`
 
@@ -51,16 +55,23 @@ CLI: `office-pptx-edit`. Use only native placeholders and explicitly named `slot
 ## Creation-first PPTX — `pptx_ai_composer`
 
 ```python
+import json
+from pathlib import Path
+
 from pptx_ai_composer.contracts import validate_deck_spec
-from pptx_ai_composer.renderer import render_deck
 from pptx_ai_composer.preview import render_preview
+from pptx_ai_composer.renderer import render_deck
+from pptx_ai_composer.review_contract import validate_review_packet
 from pptx_ai_composer.validator import validate_presentation
 
 validate_deck_spec(deck_spec)
-render_preview(deck_spec, preview_directory, protected_paths=[...])
+preview = render_preview(deck_spec, preview_directory, protected_paths=[...])
+validate_review_packet(json.loads(Path(preview["review_contract"]).read_text()))
 render_deck(deck_spec, output_pptx, protected_paths=[...])
 validate_presentation(output_pptx, deck_spec)
 ```
+
+`render_preview` publishes a closed, chat-only `review.json` plus per-slide SVG/PNG files in one atomic directory replacement. Existing-review replacement requires Linux `renameat2(RENAME_EXCHANGE)` and keeps the previous review authoritative if the exchange fails. Its result includes an internally computed canonical DeckSpec + compiled SceneSpec `revision`, `review_contract`, and absolute `display_artifacts`; callers cannot override the revision. The lower-level `render_scene_preview` API instead binds its validated SceneSpec. Hermes WebUI can display those PNG paths through its native `MEDIA:` handling; the core package does not own chat state or attachment registration. Image nodes are explicitly disclosed as labeled structural placeholders rather than rendered asset pixels.
 
 CLI: `office-pptx-compose`. Managed archetypes and variants are exposed by its `catalog` action.
 

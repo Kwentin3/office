@@ -19,7 +19,7 @@ closed JSON/Python contract
 From the versioned GitHub archive (works in slim containers without a `git` binary):
 
 ```bash
-python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.3.0.zip"
+python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.4.0.zip"
 ```
 
 For development:
@@ -39,8 +39,8 @@ Python 3.11+ is required.
 
 | Domain | Python import | CLI | Mode |
 |---|---|---|---|
-| DOCX | `office_artifact_tool` | `office-docx` | create + preservation-first edit |
-| XLSX | `xlsx_artifact_tool` | `office-xlsx` | create + cell/range/formula edit |
+| DOCX | `office_artifact_tool` | `office-docx` | create + chat review + preservation-first edit |
+| XLSX | `xlsx_artifact_tool` | `office-xlsx` | create + chat review + cell/range/formula edit |
 | PPTX editor | `pptx_artifact_tool` | `office-pptx-edit` | preservation-first template/slot edit |
 | PPTX composer | `pptx_ai_composer` | `office-pptx-compose` | creation-first semantic composition |
 | Application witness | `office_application_witness` | `office-witness` | clone-only LibreOffice observation |
@@ -85,7 +85,31 @@ result = tool.create(
 assert result["status"] == "ok"
 ```
 
+### Chat-only DOCX/XLSX review
+
+Creation-first Word and Excel work can be reviewed before the Office export:
+
+```python
+from office_artifact_tool import render_docx_preview
+from xlsx_artifact_tool import render_xlsx_preview
+
+word_review = render_docx_preview(docx_model, "docx-review")
+excel_review = render_xlsx_preview(xlsx_model, "xlsx-review")
+```
+
+Each call atomically publishes a closed `review.json` plus escaped, script-free HTML structural previews and returns absolute `display_artifacts` for native Hermes WebUI `MEDIA:` rendering. Replacing an existing review requires Linux `renameat2(RENAME_EXCHANGE)` support and fails closed without changing the old review when that primitive is unavailable. Chat revises the complete semantic model; preview never becomes editable state. DOCX preview is not Word pagination, and XLSX preview neither executes formulas nor claims Excel layout fidelity. After approval, pass the exact revised model to the existing `create(...)` method to produce the Office file.
+
 ### Creation-first PPTX
+
+```bash
+office-pptx-compose <<'JSON'
+{"action":"preview","spec":"examples/pptx-composer/managed-library.deck.json","output":"deck-preview"}
+JSON
+```
+
+`preview` atomically publishes a closed chat-only `review.json` and per-slide SVG/PNG files. Replacing an existing preview uses Linux `renameat2(RENAME_EXCHANGE)`, matching the DOCX/XLSX continuous old-or-new visibility boundary. Its JSON response exposes `display_artifacts`; Hermes WebUI can show those PNG paths through native `MEDIA:` rendering. Chat revises the DeckSpec, then calls `preview` again. There is no direct preview editing or second document state. Image nodes appear as labeled placeholders in this structural preview; their admitted pixels are embedded only by the final native PPTX renderer.
+
+After approval:
 
 ```bash
 office-pptx-compose <<'JSON'
