@@ -149,11 +149,11 @@ Copy or adapt `examples/openwebui_backend/office_service.py` inside the sidecar 
 
 ### OpenAPI registration
 
-For a shared production deployment, register the sidecar as a **Global Tool Server** in **Admin Settings → Integrations**. Open WebUI documents those requests as originating from the Open WebUI backend, so the backend network must reach the sidecar URL. Scope access to the intended users/groups and authenticate the sidecar at the network/application boundary.
+For a shared production deployment, register the sidecar as an **admin-managed Global OpenAPI Tool Server**. Open WebUI's menu labels and locations can change between versions, so verify the exact registration screen against the pinned Open WebUI version. Open WebUI documents Global Tool Server requests as originating from the Open WebUI backend, so the backend network must reach the sidecar URL. Scope access to the intended users/groups and authenticate the sidecar at the network/application boundary.
 
-Global tools are hidden per user by default and must be explicitly enabled from the chat Integrations control; registration by an administrator alone does not make a tool active for every chat.
+Global tools are hidden by default and must be enabled for the chat through the **+ tool/integration menu**; administrator registration alone does not make a tool active for every chat.
 
-User Tool Servers are browser-originated, visible only to the registering user, and require the Direct Tool Servers permission for non-admins. They are useful for local development but are not the recommended multi-tenant production topology for this service.
+User Tool Servers are browser-originated, visible only to the registering user, and require the Direct Tool Servers permission for non-admins. Their exact Settings location must likewise be verified against the pinned Open WebUI version. They are useful for local development but are not the recommended multi-tenant production topology for this service.
 
 Expose only closed, bounded operations. Give each operation a stable descriptive name, narrow typed request/response schema, server-enforced byte/work limits, and idempotency semantics where applicable. Open WebUI's checked parser documentation describes discovery of standard OpenAPI 3.x HTTP operations; it does **not** establish every internal Open WebUI field or filesystem path as a public compatibility contract.
 
