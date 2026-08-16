@@ -34,7 +34,7 @@ tool.validate(source, before=None)
 
 CLI: `office-xlsx` using one JSON request on stdin. Full contract: `packages/xlsx/CONTRACT.md`.
 
-`render_docx_preview` and `render_xlsx_preview` atomically publish closed `review.json` packets and bounded HTML structural previews. Existing-review replacement uses Linux `renameat2(RENAME_EXCHANGE)` so readers never observe a missing publication directory; an unavailable atomic-exchange primitive refuses the replacement and preserves the prior review. Their revision is computed from the complete validated semantic model, while artifact SHA-256 values bind the actual published HTML bytes. The HTML is escaped, script-free review evidence for native Hermes/Open WebUI media display; it is not Word pagination or an Excel application render. Formula text may be shown but is never evaluated by preview.
+`render_docx_preview` and `render_xlsx_preview` atomically publish closed `review.json` packets and bounded HTML structural previews. Existing-review replacement uses Linux `renameat2(RENAME_EXCHANGE)` so readers never observe a missing publication directory; an unavailable atomic-exchange primitive refuses the replacement and preserves the prior review. Their revision is computed from the complete validated semantic model, while artifact SHA-256 values bind the actual published HTML bytes. The HTML is escaped, script-free review evidence for a host adapter to register through its own file/media surface; it is not Word pagination or an Excel application render. Formula text may be shown but is never evaluated by preview.
 
 ## Preservation-first PPTX — `pptx_artifact_tool`
 

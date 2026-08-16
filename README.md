@@ -97,7 +97,7 @@ word_review = render_docx_preview(docx_model, "docx-review")
 excel_review = render_xlsx_preview(xlsx_model, "xlsx-review")
 ```
 
-Each call atomically publishes a closed `review.json` plus escaped, script-free HTML structural previews and returns absolute `display_artifacts` for native Hermes WebUI `MEDIA:` rendering. Replacing an existing review requires Linux `renameat2(RENAME_EXCHANGE)` support and fails closed without changing the old review when that primitive is unavailable. Chat revises the complete semantic model; preview never becomes editable state. DOCX preview is not Word pagination, and XLSX preview neither executes formulas nor claims Excel layout fidelity. After approval, pass the exact revised model to the existing `create(...)` method to produce the Office file.
+Each call atomically publishes a closed `review.json` plus escaped, script-free HTML structural previews and returns absolute `display_artifacts` for a host adapter to register and display. Replacing an existing review requires Linux `renameat2(RENAME_EXCHANGE)` support and fails closed without changing the old review when that primitive is unavailable. Chat revises the complete semantic model; preview never becomes editable state. DOCX preview is not Word pagination, and XLSX preview neither executes formulas nor claims Excel layout fidelity. After approval, pass the exact revised model to the existing `create(...)` method to produce the Office file. Hermes WebUI can render registered/local artifacts with `MEDIA:`; the Open WebUI integration described below instead uses Open WebUI-owned File-object or Rich UI delivery.
 
 ### Creation-first PPTX
 
@@ -107,7 +107,7 @@ office-pptx-compose <<'JSON'
 JSON
 ```
 
-`preview` atomically publishes a closed chat-only `review.json` and per-slide SVG/PNG files. Replacing an existing preview uses Linux `renameat2(RENAME_EXCHANGE)`, matching the DOCX/XLSX continuous old-or-new visibility boundary. Its JSON response exposes `display_artifacts`; Hermes WebUI can show those PNG paths through native `MEDIA:` rendering. Chat revises the DeckSpec, then calls `preview` again. There is no direct preview editing or second document state. Image nodes appear as labeled placeholders in this structural preview; their admitted pixels are embedded only by the final native PPTX renderer.
+`preview` atomically publishes a closed chat-only `review.json` and per-slide SVG/PNG files. Replacing an existing preview uses Linux `renameat2(RENAME_EXCHANGE)`, matching the DOCX/XLSX continuous old-or-new visibility boundary. Its JSON response exposes host-neutral `display_artifacts`; a host adapter must register and deliver those PNGs through the host's native file/media surface. Chat revises the DeckSpec, then calls `preview` again. There is no direct preview editing or second document state. Image nodes appear as labeled placeholders in this structural preview; their admitted pixels are embedded only by the final native PPTX renderer.
 
 After approval:
 
@@ -127,17 +127,22 @@ inspect → choose exact tx_* target → plan → apply to a different path → 
 
 Never invent or persist transaction IDs. They are bound to the exact source fingerprint.
 
-## Integration into `openweb.ui`
+## Integration into Open WebUI
 
-Recommended boundary:
+Recommended boundary, verified against the official Open WebUI extension documentation:
 
 ```text
-Open WebUI route/tool
+Open WebUI chat
+→ external Office OpenAPI sidecar
 → authenticated per-request workspace
-→ Python package call
+→ exactly one domain package call
 → typed result/refusal
-→ register validated output as an attachment
+→ optional thin native Tool/Action registers File objects or persisted Rich UI
 ```
+
+Use OpenAPI as the service boundary, not legacy Pipelines. External tools can use Open WebUI's authenticated endpoint for supported one-way UI events. Keep any native Workspace Tool/Action limited to host-local file handling, native Rich UI conversion, bidirectional confirmation/input, and authenticated sidecar calls; Workspace Tools execute inside the Open WebUI process and must not contain Office mutation logic. `MEDIA:` is Hermes-specific and is not an Open WebUI transport contract. See the integration guide for the checked upstream sources, the documented event/MCP wording tension, reserved-argument stability, and revision-bound approval persistence.
+
+The repository currently provides the Office packages and path-safe `OfficeService` example, not a ready-to-register FastAPI/OpenAPI server or native Open WebUI Tool/Action.
 
 See:
 

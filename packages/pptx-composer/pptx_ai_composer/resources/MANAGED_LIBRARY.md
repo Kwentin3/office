@@ -64,7 +64,7 @@ The `preview` action compiles the same approved DeckSpec into:
 - one 1280×720 PNG per slide;
 - one backend manifest with slide IDs, archetypes, variants, limitations, and bounded text-overflow diagnostics.
 
-The CLI response exposes the ReviewPacket path and absolute PNG `display_artifacts` so Hermes/Open WebUI can use native media delivery instead of another viewer. The PNG path also exists so an LLM/vision critic can immediately inspect the result after each chat revision. Publication is atomic: a reader never sees a directory containing a mix of old and new slides. Preview artifacts are read-only evidence and never mutate DeckSpec.
+The CLI response exposes the ReviewPacket path and absolute PNG `display_artifacts` for a host adapter to register through its native file/media surface instead of adding another Office viewer. The PNG path also exists so an LLM/vision critic can immediately inspect the result after each chat revision. Publication is atomic: a reader never sees a directory containing a mix of old and new slides. Preview artifacts are read-only evidence and never mutate DeckSpec.
 
 ## Claim boundary
 

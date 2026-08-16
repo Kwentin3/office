@@ -104,10 +104,12 @@ DeckSpec
 
 The provider-specific adapter is outside every document runtime. It may allocate request workspaces, invoke exactly one domain API, and register returned artifacts. For review publication it retains descriptor-relative authority through the complete domain call and rechecks every bound request ancestor before returning. It must not parse prompts, compile layouts, edit Office files, or translate direct UI manipulation into document mutations. The MVP interaction is chat-only; every visual revision begins with a complete validated domain model.
 
+For Open WebUI, the default deployment is an external OpenAPI Office sidecar plus an optional thin native Workspace Tool/Action for host-local file handling, native Rich UI conversion, or bidirectional confirmation/input. Supported one-way events may be sent from the sidecar through Open WebUI's authenticated event endpoint, subject to pinned-version contract tests. Pipelines are not part of the architecture. Native MCP is not required for the bounded REST-shaped Office contract. Absolute `display_artifacts` paths are sidecar-local adapter outputs, not browser URLs or an Open WebUI transport API.
+
 ### Application witness
 
 The witness is an OS/application boundary, not a shared Office model. It knows only the closed artifact type, file suffix, subprocess policy, and output validation. It receives no mutation plan and cannot publish a document. Rich Inspect and strict template compilers remain inside their format packages.
 
 ## Host responsibilities
 
-The package validates artifacts, not user identity or tenant ownership. A host such as `openweb.ui` must provide authentication, authorization, request isolation, upload policy, quotas, cleanup, and attachment delivery.
+The package validates artifacts, not user identity or tenant ownership. A host such as Open WebUI must provide authentication, authorization, revision-bound approval persistence, request isolation, upload policy, quotas, cleanup, and attachment/embed delivery. The host adapter must stage admitted bytes without making Open WebUI's internal storage path layout part of the document-domain contract.
