@@ -97,7 +97,7 @@ word_review = render_docx_preview(docx_model, "docx-review")
 excel_review = render_xlsx_preview(xlsx_model, "xlsx-review")
 ```
 
-Each call atomically publishes a closed `review.json` plus escaped, script-free HTML structural previews and returns absolute `display_artifacts` for a host adapter to register and display. Replacing an existing review requires Linux `renameat2(RENAME_EXCHANGE)` support and fails closed without changing the old review when that primitive is unavailable. Chat revises the complete semantic model; preview never becomes editable state. DOCX preview is not Word pagination, and XLSX preview neither executes formulas nor claims Excel layout fidelity. After approval, pass the exact revised model to the existing `create(...)` method to produce the Office file. Hermes WebUI can render registered/local artifacts with `MEDIA:`; the Open WebUI integration described below instead uses Open WebUI-owned File-object or Rich UI delivery.
+Each call atomically publishes a closed `review.json` plus escaped, script-free HTML structural previews and returns absolute `display_artifacts` for a host adapter to register and display. Replacing an existing review requires Linux `renameat2(RENAME_EXCHANGE)` support and fails closed without changing the old review when that primitive is unavailable. Chat revises the complete semantic model; preview never becomes editable state. DOCX preview is not Word pagination, and XLSX preview neither executes formulas nor claims Excel layout fidelity. After approval, pass the exact revised model to the existing `create(...)` method to produce the Office file. A downstream Hermes adapter can register local artifacts and emit `MEDIA:` handles; Open WebUI instead uses Open WebUI-owned File objects or Rich UI delivery. Neither transport is emitted by the domain package itself.
 
 ### Creation-first PPTX
 
@@ -127,6 +127,19 @@ inspect → choose exact tx_* target → plan → apply to a different path → 
 
 Never invent or persist transaction IDs. They are bound to the exact source fingerprint.
 
+## Integration into Hermes WebUI
+
+A verified downstream Hermes integration exposes five closed native tools:
+
+```text
+office_start → office_preview → visible structural preview
+→ direct later user approval → office_approve → office_export
+```
+
+The host adapter binds each Office session to the Hermes chat, prevents same-turn or model-generated approval, invalidates approval after a new preview, invokes a separate pinned `kwentin-office` Python process with fixed argv, and publishes reviewed artifacts through Hermes-native `MEDIA:` handles. This is dependency/process isolation, not an OS sandbox. The tested adapter currently refuses external PPTX assets until a host-approved attachment channel exists. It does not duplicate the document-domain logic.
+
+This repository currently ships the package contracts and provider-neutral host example, **not** an installable Hermes plugin. The tested downstream plugin validates the architecture but remains a separate deployment artifact until its source and installer are published here. See the [Hermes WebUI integration guide](docs/hermes-integration.md) for the five-tool contract, approval provenance, verification gates, evidence, and remaining limits.
+
 ## Integration into Open WebUI
 
 Recommended boundary, verified against the official Open WebUI extension documentation:
@@ -147,13 +160,14 @@ The repository currently provides the Office packages and path-safe `OfficeServi
 See:
 
 - [Open WebUI integration guide](docs/openwebui-integration.md)
+- [Hermes WebUI integration guide](docs/hermes-integration.md)
 - [host adapter example](examples/openwebui_backend/office_service.py)
 - [public APIs](docs/api.md)
 - [architecture](docs/architecture.md)
 - [Rich Inspect and strict templates](docs/rich-inspect-and-templates.md)
 - [Application Witness](docs/application-witness.md)
 
-The core package has no dependency on Open WebUI, FastAPI, a model provider, or a storage vendor.
+The core package has no dependency on Hermes, Open WebUI, FastAPI, a model provider, or a storage vendor.
 
 ## Agent contracts
 

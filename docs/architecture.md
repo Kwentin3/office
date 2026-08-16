@@ -104,6 +104,8 @@ DeckSpec
 
 The provider-specific adapter is outside every document runtime. It may allocate request workspaces, invoke exactly one domain API, and register returned artifacts. For review publication it retains descriptor-relative authority through the complete domain call and rechecks every bound request ancestor before returning. It must not parse prompts, compile layouts, edit Office files, or translate direct UI manipulation into document mutations. The MVP interaction is chat-only; every visual revision begins with a complete validated domain model.
 
+For Hermes WebUI, the verified downstream pattern is a native five-tool plugin (`start`, `preview`, `approve`, `export`, `status`) plus a separate pinned `kwentin-office` Python process. That is dependency/process isolation, not an OS sandbox. The host owns chat/turn identity, direct-user approval provenance, durable revision state, private workspaces, and `MEDIA:` delivery. The Office packages return host-neutral paths and revisions; they neither emit `MEDIA:` nor know Hermes session identifiers. The tested adapter currently refuses external PPTX assets until a host-approved attachment channel exists. The downstream plugin is not currently distributed by this repository; see `docs/hermes-integration.md` for the exact status and verification boundary.
+
 For Open WebUI, the default deployment is an external OpenAPI Office sidecar plus an optional thin native Workspace Tool/Action for host-local file handling, native Rich UI conversion, or bidirectional confirmation/input. Supported one-way events may be sent from the sidecar through Open WebUI's authenticated event endpoint, subject to pinned-version contract tests. Pipelines are not part of the architecture. Native MCP is not required for the bounded REST-shaped Office contract. Absolute `display_artifacts` paths are sidecar-local adapter outputs, not browser URLs or an Open WebUI transport API.
 
 ### Application witness
@@ -112,4 +114,4 @@ The witness is an OS/application boundary, not a shared Office model. It knows o
 
 ## Host responsibilities
 
-The package validates artifacts, not user identity or tenant ownership. A host such as Open WebUI must provide authentication, authorization, revision-bound approval persistence, request isolation, upload policy, quotas, cleanup, and attachment/embed delivery. The host adapter must stage admitted bytes without making Open WebUI's internal storage path layout part of the document-domain contract.
+The package validates artifacts, not user identity or tenant ownership. A host such as Hermes WebUI or Open WebUI must provide authentication, authorization, revision-bound approval persistence, request isolation, upload policy, quotas, cleanup, and native artifact delivery. The host adapter must stage admitted bytes without making host-internal storage paths part of the document-domain contract.
