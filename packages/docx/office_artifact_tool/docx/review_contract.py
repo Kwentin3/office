@@ -1,4 +1,4 @@
-"""Closed contract for DOCX structural-preview evidence returned to chat."""
+"""Closed contract for DOCX styled-layout preview evidence returned to chat."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ _PACKET_FIELDS = {
     "kind",
     "interaction",
     "document_id",
+    "presentation_id",
     "revision",
     "fidelity",
     "limitations",
@@ -81,15 +82,17 @@ def validate_review_packet(raw: Any) -> dict[str, Any]:
     """Validate and defensively copy a recursively closed V1 review packet."""
     packet = _object(raw, "review")
     _closed(packet, _PACKET_FIELDS, "review")
-    if packet["contract_version"] != "1.0":
-        raise ReviewContractError("review.contract_version must be 1.0")
+    if packet["contract_version"] != "1.1":
+        raise ReviewContractError("review.contract_version must be 1.1")
     if packet["kind"] != "docx_chat_review":
         raise ReviewContractError("review.kind must be docx_chat_review")
     if packet["interaction"] != "chat_only":
         raise ReviewContractError("review.interaction must be chat_only")
     _identifier(packet["document_id"], "review.document_id")
+    if packet["presentation_id"] != "professional-a4/v2":
+        raise ReviewContractError("review.presentation_id is unsupported")
     _digest(packet["revision"], "review.revision")
-    if packet["fidelity"] != "structural_preview_not_word_render":
+    if packet["fidelity"] != "styled_layout_proxy_not_word_render":
         raise ReviewContractError("review.fidelity is unsupported")
 
     limitations = packet["limitations"]

@@ -228,7 +228,7 @@ docx_review = service.docx_chat_review(request_id, revised_docx_model)
 xlsx_review = service.xlsx_chat_review(request_id, revised_xlsx_model)
 ```
 
-DOCX returns one bounded HTML document preview. XLSX returns one bounded HTML grid per visible sheet, up to its documented review limit; hidden sheets are not displayed and are reported in diagnostics. Both HTML formats escape model content, contain no script or external resources, and expose stable semantic addresses (`block_id`, or sheet name + cell coordinate). They are structural previews, not Word pagination or Excel application rendering. XLSX preview shows formulas as text and never claims recalculation.
+DOCX returns one bounded, script-free HTML styled-layout proxy driven by the same `professional-a4/v2` presentation contract as final creation. It mirrors A4 page geometry, managed typography, spacing, lists, and table geometry; line wrapping, page breaks, and font substitution remain browser approximations rather than Word pagination. XLSX returns one bounded structural HTML grid per visible sheet, up to its documented review limit; hidden sheets are not displayed and are reported in diagnostics. Both HTML formats escape model content, contain no script or external resources, and expose stable semantic addresses (`block_id`, or sheet name + cell coordinate). XLSX preview shows formulas as text and never claims current cached values.
 
 The result contains `revision`, `review_contract`, `display_artifacts`, and `interaction: chat_only`. The bridge must read/register those sidecar-owned HTML files and deliver them through the Open WebUI mechanisms described above; it must not expose the absolute sidecar path to the model or browser.
 

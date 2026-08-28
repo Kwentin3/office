@@ -1,4 +1,4 @@
-"""Fast, structural HTML preview for chat-only DOCX review."""
+"""Bounded styled-layout HTML proxy for chat-only DOCX review."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any
 
 from ..core.contracts import validate_create_model
 from ..core.errors import ArtifactError, refusal
+from .presentation import DocxPresentation, resolve_presentation
 from .review_contract import validate_review_packet
 
 MAX_PREVIEW_BLOCKS = 100
@@ -56,9 +57,30 @@ def _cleanup_old_generation(temporary: Path, backup: Path) -> None:
         pass
 
 
-def _revision(model: dict[str, Any]) -> str:
-    encoded = json.dumps(model, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+def _revision(model: dict[str, Any], presentation_id: str | None = None) -> str:
+    identity = {
+        "model": model,
+        "presentation_id": presentation_id or resolve_presentation().presentation_id,
+    }
+    encoded = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _prepare_review(model: dict[str, Any]) -> tuple[dict[str, Any], DocxPresentation, str]:
+    validated = validate_create_model(model)
+    presentation = resolve_presentation()
+    revision = _revision(validated, presentation.presentation_id)
+    return validated, presentation, revision
+
+
+def prepare_review_identity(model: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Validate a model and bind its review identity to presentation V1."""
+    validated, _presentation, revision = _prepare_review(model)
+    return validated, revision
+
+
+def canonical_review_revision(model: dict[str, Any]) -> str:
+    return prepare_review_identity(model)[1]
 
 
 def _escaped(value: Any) -> str:
@@ -87,7 +109,67 @@ def _bounded_text(value: Any) -> tuple[str, int]:
     return text[:MAX_TEXT_CHARACTERS_PER_VALUE], omitted
 
 
-def _render_html(model: dict[str, Any], document_id: str) -> tuple[bytes, dict[str, Any]]:
+def _css(presentation: DocxPresentation) -> str:
+    page = presentation.page
+    body = presentation.body
+    font_stack = ",".join((body.font_name, *(f'"{name}"' if " " in name else name for name in body.fallback_fonts)))
+    variables = []
+    rules = []
+    for configured in presentation.paragraph_styles:
+        token = _style_token(configured.name)
+        css_left_indent = 0 if configured.name in {"List Bullet", "List Number"} else configured.left_indent_mm
+        variables.extend((
+            f"--{token}-size:{configured.size_pt:g}pt;",
+            f"--{token}-color:#{configured.color};",
+        ))
+        rules.append(
+            f".word-style-{token}{{font-size:var(--{token}-size);color:var(--{token}-color);"
+            f"font-weight:{700 if configured.bold else 400};font-style:{'italic' if configured.italic else 'normal'};"
+            f"margin-top:{configured.space_before_pt:g}pt;margin-bottom:{configured.space_after_pt:g}pt;"
+            f"margin-left:{css_left_indent:g}mm;line-height:{body.line_height:g}}}"
+        )
+    list_bullet = presentation.paragraph_style("List Bullet")
+    list_number = presentation.paragraph_style("List Number")
+    list_indent = list_bullet.left_indent_mm
+    return (
+        ":root{"
+        f"--page-width:{page.width_mm:g}mm;--page-height:{page.height_mm:g}mm;"
+        f"--margin-top:{page.margin_top_mm:g}mm;--margin-right:{page.margin_right_mm:g}mm;"
+        f"--margin-bottom:{page.margin_bottom_mm:g}mm;--margin-left:{page.margin_left_mm:g}mm;"
+        f"--body-font:{font_stack};--body-size:{body.size_pt:g}pt;"
+        f"--body-color:#{body.color};--line-height:{body.line_height:g};"
+        f"--table-border-color:#{presentation.table.border_color};"
+        f"--table-border-width:{presentation.table.border_width_pt:g}pt;"
+        f"--table-cell-padding:{presentation.table.cell_padding_mm:g}mm;"
+        f"{''.join(variables)}"
+        "}"
+        "*{box-sizing:border-box}"
+        "html{background:#e9edf2}"
+        "body{margin:0;padding:24px;font-family:var(--body-font);font-size:var(--body-size);"
+        "line-height:var(--line-height);color:var(--body-color)}"
+        ".document-page{width:var(--page-width);min-height:var(--page-height);margin:0 auto;"
+        "padding:var(--margin-top) var(--margin-right) var(--margin-bottom) var(--margin-left);"
+        "background:#fff;box-shadow:0 4px 24px rgba(31,42,55,.16)}"
+        "h1,h2,h3,h4,h5,h6,p,ul,ol{margin-right:0;padding-top:0;padding-bottom:0}"
+        f"{''.join(rules)}"
+        f"ul.word-style,ol.word-style{{padding-left:{list_indent:g}mm;margin-top:0;margin-bottom:0}}"
+        f".word-style-list-bullet li{{margin-bottom:{list_bullet.space_after_pt:g}pt}}"
+        f".word-style-list-number li{{margin-bottom:{list_number.space_after_pt:g}pt}}"
+        ".word-table{width:100%;table-layout:fixed;border-collapse:collapse;margin:0}"
+        ".word-table td{border:var(--table-border-width) solid var(--table-border-color);"
+        "padding:var(--table-cell-padding);vertical-align:top}"
+        '.word-table .word-style-normal:empty::after{content:"\\00a0"}'
+        f"@page{{size:{page.width_mm:g}mm {page.height_mm:g}mm;"
+        f"margin:{page.margin_top_mm:g}mm {page.margin_right_mm:g}mm "
+        f"{page.margin_bottom_mm:g}mm {page.margin_left_mm:g}mm}}"
+    )
+
+
+def _style_token(name: str) -> str:
+    return name.casefold().replace(" ", "-")
+
+
+def _render_html(model: dict[str, Any], document_id: str, presentation: DocxPresentation) -> tuple[bytes, dict[str, Any]]:
     blocks: list[str] = []
     truncations: list[dict[str, Any]] = []
     identifiers = _block_ids(model)
@@ -101,9 +183,17 @@ def _render_html(model: dict[str, Any], document_id: str) -> tuple[bytes, dict[s
                 truncations.append({"block_id": block_id, "content": "text_characters", "omitted": omitted})
             if kind == "heading":
                 level = block.get("level", 1)
-                content = f"<h{level}>{_escaped(text)}</h{level}>"
+                token = _style_token(f"Heading {level}")
+                if level <= 6:
+                    content = f'<h{level} class="word-style word-style-{token}">{_escaped(text)}</h{level}>'
+                else:
+                    content = (
+                        f'<p role="heading" aria-level="{level}" '
+                        f'class="word-style word-style-{token}">{_escaped(text)}</p>'
+                    )
             else:
-                content = f"<p>{_escaped(text)}</p>"
+                token = _style_token(block.get("style", "Normal"))
+                content = f'<p class="word-style word-style-{token}">{_escaped(text)}</p>'
         elif kind in {"numbered_list", "bulleted_list"}:
             tag = "ol" if kind == "numbered_list" else "ul"
             item_texts: list[str] = []
@@ -119,17 +209,23 @@ def _render_html(model: dict[str, Any], document_id: str) -> tuple[bytes, dict[s
             omitted_items = max(0, len(block["items"]) - MAX_LIST_ITEMS_PER_BLOCK)
             if omitted_items:
                 truncations.append({"block_id": block_id, "content": "list_items", "omitted": omitted_items})
-            content = f"<{tag}>{''.join(item_texts)}</{tag}>"
+            token = _style_token("List Number" if kind == "numbered_list" else "List Bullet")
+            content = f'<{tag} class="word-style word-style-{token}">{"".join(item_texts)}</{tag}>'
         elif kind == "table":
             row_html: list[str] = []
             omitted_characters = 0
             retained_rows = block["rows"][:MAX_TABLE_ROWS_PER_BLOCK]
+            retained_width = min(max(map(len, retained_rows)), MAX_TABLE_COLUMNS_PER_ROW)
             for row in retained_rows:
                 cells: list[str] = []
-                for value in row[:MAX_TABLE_COLUMNS_PER_ROW]:
+                retained_values = row[:MAX_TABLE_COLUMNS_PER_ROW]
+                for value in (*retained_values, *("" for _ in range(retained_width - len(retained_values)))):
                     text, omitted = _bounded_text(value)
                     omitted_characters += omitted
-                    cells.append(f"<td>{_escaped(text)}</td>")
+                    cells.append(
+                        '<td><p class="word-style word-style-normal">'
+                        f"{_escaped(text)}</p></td>"
+                    )
                 row_html.append("<tr>" + "".join(cells) + "</tr>")
             omitted_rows = max(0, len(block["rows"]) - MAX_TABLE_ROWS_PER_BLOCK)
             if omitted_rows:
@@ -143,10 +239,11 @@ def _render_html(model: dict[str, Any], document_id: str) -> tuple[bytes, dict[s
                 truncations.append(
                     {"block_id": block_id, "content": "text_characters", "omitted": omitted_characters}
                 )
-            content = f"<table><tbody>{''.join(row_html)}</tbody></table>"
+            token = _style_token(block.get("style", "Table Grid"))
+            content = f'<table class="word-table word-{token}"><tbody>{"".join(row_html)}</tbody></table>'
         blocks.append(f'<section data-block-id="{_escaped(block_id)}">{content}</section>')
 
-    raw_title = model.get("metadata", {}).get("title", "DOCX structural preview")
+    raw_title = model.get("metadata", {}).get("title", "DOCX styled-layout preview")
     title, omitted_title = _bounded_text(raw_title)
     if omitted_title:
         truncations.insert(
@@ -154,9 +251,10 @@ def _render_html(model: dict[str, Any], document_id: str) -> tuple[bytes, dict[s
             {"block_id": document_id, "content": "text_characters", "omitted": omitted_title},
         )
     document = (
-        f'<!doctype html><html><head><meta charset="utf-8"><title>{_escaped(title)}</title></head>'
-        f"<body>{''.join(blocks)}</body></html>\n"
-    ).encode("utf-8")
+        f'<!doctype html><html><head><meta charset="utf-8"><title>{_escaped(title)}</title>'
+        f"<style>{_css(presentation)}</style></head>"
+        f'<body><main class="document-page">{"".join(blocks)}</main></body></html>\n'
+    ).encode()
     total = len(model["blocks"])
     rendered = len(selected)
     diagnostics = {
@@ -181,6 +279,7 @@ def _publish(
     html_bytes: bytes,
     *,
     document_id: str,
+    presentation_id: str,
     revision: str,
     diagnostics: dict[str, Any],
 ) -> None:
@@ -191,14 +290,17 @@ def _publish(
         (temporary / "document.html").write_bytes(html_bytes)
         review = validate_review_packet(
             {
-                "contract_version": "1.0",
+                "contract_version": "1.1",
                 "kind": "docx_chat_review",
                 "interaction": "chat_only",
                 "document_id": document_id,
+                "presentation_id": presentation_id,
                 "revision": revision,
-                "fidelity": "structural_preview_not_word_render",
+                "fidelity": "styled_layout_proxy_not_word_render",
                 "limitations": [
-                    "layout, pagination, fonts, headers, footers, and fields are not Word-rendered",
+                    "page geometry, managed styles, colors, and spacing mirror the DOCX presentation contract",
+                    "line wrapping and pagination remain browser approximations",
+                    "fonts, headers, footers, and fields are not Word-rendered",
                     "only a bounded subset of create-model content is displayed",
                 ],
                 "diagnostics": diagnostics,
@@ -227,7 +329,7 @@ def _publish(
 def render_docx_preview(model: dict[str, Any], output_dir: str | Path) -> dict[str, Any]:
     """Validate a create model and identify its chat-review revision."""
     try:
-        validated = validate_create_model(model)
+        validated, presentation, revision = _prepare_review(model)
     except ArtifactError as exc:
         return refusal(exc.reason, exc.details)
     raw_output = Path(output_dir).expanduser().absolute()
@@ -240,12 +342,12 @@ def render_docx_preview(model: dict[str, Any], output_dir: str | Path) -> dict[s
     if raw_backup.exists() and not raw_backup.is_dir():
         raise PreviewError("preview backup path must be a directory")
     document_id = validated.get("document_id", "document")
-    revision = _revision(validated)
-    html_bytes, diagnostics = _render_html(validated, document_id)
+    html_bytes, diagnostics = _render_html(validated, document_id, presentation)
     _publish(
         output,
         html_bytes,
         document_id=document_id,
+        presentation_id=presentation.presentation_id,
         revision=revision,
         diagnostics=diagnostics,
     )

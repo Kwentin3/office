@@ -15,7 +15,8 @@ def test_review_packet_is_recursively_closed_and_chat_only(tmp_path: Path) -> No
 
     assert validate_review_packet(packet) == packet
     assert packet["interaction"] == "chat_only"
-    assert packet["fidelity"] == "structural_preview_not_word_render"
+    assert packet["fidelity"] == "styled_layout_proxy_not_word_render"
+    assert packet["presentation_id"] == "professional-a4/v2"
 
     forbidden = {"prompt", "callback", "office", "coordinates", "mutation", "instructions"}
 

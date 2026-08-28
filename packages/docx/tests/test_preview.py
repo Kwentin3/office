@@ -7,8 +7,9 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from office_artifact_tool import api as api_module
 from office_artifact_tool import DocxArtifactTool
+from office_artifact_tool import api as api_module
+from office_artifact_tool.core.contracts import validate_create_model
 from office_artifact_tool.docx import preview as preview_module
 from office_artifact_tool.docx.preview import (
     MAX_LIST_ITEMS_PER_BLOCK,
@@ -18,11 +19,11 @@ from office_artifact_tool.docx.preview import (
     MAX_TEXT_CHARACTERS_PER_VALUE,
     render_docx_preview,
 )
-from office_artifact_tool.core.contracts import validate_create_model
 
 
 def _revision(model: dict) -> str:
-    payload = json.dumps(model, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    identity = {"model": model, "presentation_id": "professional-a4/v2"}
+    payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -93,8 +94,8 @@ def test_preview_uses_one_validated_snapshot_when_caller_mutates_after_revision(
     original = deepcopy(model)
     real_revision = preview_module._revision
 
-    def mutate_caller_after_revision(validated: dict) -> str:
-        revision = real_revision(validated)
+    def mutate_caller_after_revision(validated: dict, presentation_id: str | None = None) -> str:
+        revision = real_revision(validated, presentation_id)
         model["blocks"][0]["level"] = '<script id="pwn">alert(1)</script>'
         return revision
 
@@ -104,7 +105,7 @@ def test_preview_uses_one_validated_snapshot_when_caller_mutates_after_revision(
 
     rendered = (output / "document.html").read_text(encoding="utf-8")
     assert result["revision"] == _revision(original)
-    assert "<h1>safe</h1>" in rendered
+    assert '<h1 class="word-style word-style-heading-1">safe</h1>' in rendered
     assert "<script" not in rendered.lower()
 
 
@@ -230,7 +231,7 @@ def test_preview_is_bounded_and_reports_every_truncation(tmp_path: Path) -> None
     assert document.count("<tr>") == MAX_TABLE_ROWS_PER_BLOCK
     assert document.count("<td>") == MAX_TABLE_ROWS_PER_BLOCK * MAX_TABLE_COLUMNS_PER_ROW
     assert long_text not in document
-    assert f"<p>{'X' * MAX_TEXT_CHARACTERS_PER_VALUE}</p>" in document
+    assert f'<p class="word-style word-style-normal">{"X" * MAX_TEXT_CHARACTERS_PER_VALUE}</p>' in document
     assert "DROP ME" not in document
     assert diagnostics["truncated"] is True
     assert diagnostics["total_blocks"] == MAX_PREVIEW_BLOCKS + 1

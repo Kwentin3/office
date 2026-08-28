@@ -61,7 +61,23 @@
           "type": "string"
         },
         "style": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "Heading 1",
+            "Heading 2",
+            "Heading 3",
+            "Heading 4",
+            "Heading 5",
+            "Heading 6",
+            "Heading 7",
+            "Heading 8",
+            "Heading 9",
+            "Intense Quote",
+            "Normal",
+            "Quote",
+            "Subtitle",
+            "Title"
+          ]
         },
         "block_id": {
           "$ref": "#/$defs/identifier"
@@ -128,7 +144,10 @@
           "const": "table"
         },
         "style": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "Table Grid"
+          ]
         },
         "rows": {
           "type": "array",

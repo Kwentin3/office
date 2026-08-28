@@ -31,6 +31,7 @@ WHEEL_RUNTIME = {
     "office_artifact_tool/docx/inventory.py",
     "office_artifact_tool/docx/mutation.py",
     "office_artifact_tool/docx/preview.py",
+    "office_artifact_tool/docx/presentation.py",
     "office_artifact_tool/docx/renderer.py",
     "office_artifact_tool/docx/review_contract.py",
     "office_artifact_tool/docx/template.py",

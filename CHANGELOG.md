@@ -2,6 +2,12 @@
 
 All notable changes will be documented here.
 
+## Unreleased
+
+- Replaced the DOCX browser-default structural preview with a script-free A4 styled-layout proxy driven by the same immutable `professional-a4/v2` presentation contract as final DOCX creation.
+- Bound DOCX review revisions to both the validated semantic model and presentation profile, and narrowed caller-selectable paragraph/table styles to the closed parity-tested set.
+- Made DOCX page geometry, managed typography, list indentation, table borders, cell padding, and ragged-table shape deterministic across preview and export.
+
 ## 0.4.0 — 2026-08-15
 
 - Added chat-only creation review loops for DOCX, XLSX and PPTX, with complete validated semantic models as the only source of truth.

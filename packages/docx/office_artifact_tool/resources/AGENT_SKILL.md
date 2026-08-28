@@ -22,7 +22,7 @@ No extra top-level fields are allowed.
 4. `apply(source, plan, output)` to write a different output path.
 5. Read `validation`, `diff`, and `audit` from the result. Validation is mandatory and automatic.
 
-For a new document, put the create model inside `{"mode":"create","model":...}`. During chat-only authoring, the host calls `render_docx_preview(model, output_dir)` first, displays its `document.html` through native media, and asks for corrections to the complete semantic model. The preview is bounded structural evidence, not Word pagination. Only after approval call `create(model, output)`; do not use the edit kernel.
+For a new document, put the create model inside `{"mode":"create","model":...}`. During chat-only authoring, the host calls `render_docx_preview(model, output_dir)` first, displays its `document.html` through native media, and asks for corrections to the complete semantic model. The preview is a bounded styled-layout proxy driven by the same `professional-a4/v2` presentation contract as final DOCX creation; line wrapping and pagination remain approximations. Only after approval call `create(model, output)`; do not use the edit kernel.
 
 ## Create model
 
@@ -36,7 +36,7 @@ For a new document, put the create model inside `{"mode":"create","model":...}`.
 ]}
 ```
 
-Every text value must be XML-compatible. Paragraph and table style names must already exist in the managed default DOCX template; unknown or caller-created styles are refused before preview or DOCX publication.
+Every text value must be XML-compatible. Paragraph styles are limited to `Normal`, `Title`, `Subtitle`, `Heading 1` through `Heading 9`, `Quote`, and `Intense Quote`; use list blocks rather than list paragraph styles. The only table style is `Table Grid`. Unknown or unmanaged styles are refused before preview or DOCX publication.
 
 ## Plan requests
 
@@ -82,7 +82,7 @@ Stop on a tool refusal with one of the same reasons. Never guess a target, reuse
 
 ## Limits
 
-DOCX only. Images, comments, tracked changes, fields, macros, embedded objects, arbitrary style creation, application compatibility, pagination, and visual fidelity are unsupported/not verified.
+DOCX only. Images, comments, tracked changes, fields, macros, embedded objects, arbitrary style creation, application compatibility, exact pagination, and pixel fidelity are unsupported/not verified. Page geometry and managed-style parity are contract-tested.
 
 ## Rich Inspect and strict templates
 

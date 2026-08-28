@@ -60,12 +60,13 @@ The creation path also owns an isolated chat-review backend:
 
 ```text
 validated DocSpec
-→ bounded escaped HTML structural preview
+→ immutable DOCX presentation contract (`professional-a4/v2`)
+→ bounded escaped HTML styled-layout proxy / final DOCX renderer
 → closed DOCX ReviewPacket
-→ final DOCX from the same DocSpec after approval
+→ final DOCX from the same DocSpec + presentation identity after approval
 ```
 
-Stable `document_id` and `block_id` values belong to the semantic model. The HTML is review evidence only and never becomes the source of truth.
+Stable `document_id` and `block_id` values belong to the semantic model. Presentation meaning remains DOCX-domain-owned; HTML and OOXML are representation adapters and neither becomes a second source of truth. The HTML proxy mirrors A4 page geometry and the closed managed style set but does not claim Word pagination or font metrics.
 
 ### XLSX
 

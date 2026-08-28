@@ -144,6 +144,23 @@ class DistributionVerifierTests(unittest.TestCase):
         self.write_archives(omit_wheel="pptx_ai_composer/preview.py")
         self.assertNotEqual(self.verify().returncode, 0)
 
+    def test_wheel_inventory_covers_every_runtime_python_module(self) -> None:
+        package_roots = {
+            "office_artifact_tool": ROOT / "packages" / "docx" / "office_artifact_tool",
+            "xlsx_artifact_tool": ROOT / "packages" / "xlsx" / "xlsx_artifact_tool",
+            "pptx_artifact_tool": ROOT / "packages" / "pptx-editor" / "pptx_artifact_tool",
+            "pptx_ai_composer": ROOT / "packages" / "pptx-composer" / "pptx_ai_composer",
+            "office_application_witness": ROOT / "packages" / "application-witness" / "office_application_witness",
+        }
+        source_modules = {
+            f"{package_name}/{path.relative_to(package_root).as_posix()}"
+            for package_name, package_root in package_roots.items()
+            for path in package_root.rglob("*.py")
+            if "__pycache__" not in path.parts
+        }
+        declared_modules = {name for name in VERIFIER.WHEEL_RUNTIME if name.endswith(".py")}
+        self.assertEqual(declared_modules, source_modules)
+
     def test_metadata_and_top_level_contents_are_closed(self) -> None:
         for kwargs in (
             {"metadata": VALID_METADATA.replace(b"Version: 0.4.0", b"Version: 9.9.9")},

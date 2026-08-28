@@ -9,6 +9,7 @@ from typing import Any
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 
+from ..docx.presentation import MANAGED_PARAGRAPH_BLOCK_STYLES, MANAGED_TABLE_STYLES
 from .errors import ArtifactError
 
 _IDENTIFIER = re.compile(r'^[A-Za-z][A-Za-z0-9_.-]{0,63}$')
@@ -25,6 +26,20 @@ def _is_xml_text(value: str) -> bool:
         or 0x10000 <= code <= 0x10FFFF
         for code in map(ord, value)
     )
+
+
+def _is_safely_renderable_table_scalar(value: Any) -> bool:
+    if isinstance(value, str):
+        return _is_xml_text(value)
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, (int, bool)):
+        try:
+            str(value)
+        except (ValueError, OverflowError):
+            return False
+        return True
+    return False
 
 
 @lru_cache(maxsize=1)
@@ -74,13 +89,19 @@ def validate_create_model(model:Any)->dict[str,Any]:
                 or (style is not None and (not isinstance(style, str) or style not in paragraph_styles))
             ):
                 raise ArtifactError('validation_failure', 'invalid paragraph')
+            if style is not None and style not in MANAGED_PARAGRAPH_BLOCK_STYLES:
+                raise ArtifactError(
+                    'unsupported_capability',
+                    'style is outside the managed DOCX presentation contract',
+                )
         elif kind.endswith('_list'):
             if not isinstance(block['items'],list) or not block['items'] or len(block['items'])>10000 or not all(isinstance(x,str) and _is_xml_text(x) for x in block['items']):raise ArtifactError('validation_failure','invalid list items')
         elif kind=='table':
             rows=block['rows'];style=block.get('style','Table Grid');_, table_styles = _default_style_names()
             if not isinstance(style,str) or style not in table_styles:raise ArtifactError('validation_failure','invalid table style')
+            if style not in MANAGED_TABLE_STYLES:raise ArtifactError('unsupported_capability','style is outside the managed DOCX presentation contract')
             if not isinstance(rows,list) or not rows or len(rows)>10000 or not all(isinstance(row,list) and row and len(row)<=1000 for row in rows):raise ArtifactError('validation_failure','invalid table rows')
-            if sum(len(row) for row in rows)>100000 or not all(isinstance(value,(str,int,float,bool)) and (not isinstance(value,str) or _is_xml_text(value)) and not (isinstance(value,float) and not math.isfinite(value)) for row in rows for value in row):raise ArtifactError('validation_failure','table cells must be finite XML-compatible scalar values')
+            if sum(len(row) for row in rows)>100000 or not all(_is_safely_renderable_table_scalar(value) for row in rows for value in row):raise ArtifactError('validation_failure','table cells must be safely renderable finite XML-compatible scalar values')
     return copy.deepcopy(model)
 
 def validate_plan_request(request:Any)->None:
