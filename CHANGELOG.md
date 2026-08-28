@@ -4,9 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 0.5.0 — 2026-08-28
+
 - Replaced the DOCX browser-default structural preview with a script-free A4 styled-layout proxy driven by the same immutable `professional-a4/v2` presentation contract as final DOCX creation.
 - Bound DOCX review revisions to both the validated semantic model and presentation profile, and narrowed caller-selectable paragraph/table styles to the closed parity-tested set.
 - Made DOCX page geometry, managed typography, list indentation, table borders, cell padding, and ragged-table shape deterministic across preview and export.
+- Normalized inherited `python-docx` style defaults, including complex-script font properties, so managed Word styles cannot silently diverge from the HTML proxy.
+- Aligned table-cell paragraphs and typed scalar refusals across preview and export, including empty cells and integers that cannot be rendered safely.
+
+### Migration notes
+
+- DOCX ReviewPacket consumers must accept `contract_version: "1.1"`, require `presentation_id: "professional-a4/v2"`, and treat `fidelity: "styled_layout_proxy_not_word_render"` as an explicit non-Word-render boundary.
+- Any approval recorded for the previous presentation profile is intentionally invalid: regenerate the preview and approve its new revision before export.
+- Create requests must use the managed paragraph styles documented by the current schema. `List Bullet` and `List Number` are semantic list blocks rather than paragraph-style values; unsupported paragraph/table styles now fail closed.
 
 ## 0.4.0 — 2026-08-15
 

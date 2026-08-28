@@ -58,7 +58,7 @@ There must be one source of truth per creation request:
 
 ```text
 validated semantic model
-→ structural preview + revision-bound ReviewPacket
+→ format-native review preview + revision-bound ReviewPacket
 → chat revision of the complete model
 → explicit approval of that revision
 → final Office artifact from the same validated revision
@@ -104,10 +104,10 @@ Open WebUI's checked documentation states that external OpenAPI tool results are
 Pin a release tag in a slim production image without adding a `git` binary:
 
 ```text
-kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.4.0.zip
+kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.5.0.zip
 ```
 
-For an exact commit, replace `refs/tags/v0.4.0` with its 40-character commit SHA. During local development:
+For an exact commit, replace `refs/tags/v0.5.0` with its 40-character commit SHA. During local development:
 
 ```bash
 python -m pip install -e /path/to/office
@@ -139,7 +139,7 @@ Add the pinned archive dependency to `services/office-artifacts/pyproject.toml`:
 [project]
 requires-python = ">=3.11"
 dependencies = [
-  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.4.0.zip",
+  "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.5.0.zip",
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1",
 ]
@@ -215,7 +215,7 @@ Open WebUI chat is the only editing surface in this MVP. Do not build a second e
 chat turn
 → orchestrator emits a complete revised semantic model
 → sidecar validates the format-specific model
-→ domain atomically publishes its closed ReviewPacket + structural preview
+→ domain atomically publishes its closed ReviewPacket + format-native review preview
 → host registers/displays an Open WebUI File object or persisted Rich UI embed
 → next chat turn
 → after revision-bound approval, domain exports from the same model
