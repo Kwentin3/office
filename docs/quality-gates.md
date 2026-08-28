@@ -1,5 +1,28 @@
 # Quality gates
 
+## v0.5.0 bounded evidence
+
+| Domain | Local suite | Release evidence | Application evidence |
+|---|---:|---|---|
+| DOCX | 69/69 | presentation parity, ReviewPacket 1.1, schema and typed-refusal gates | preservation matrix + fake-soffice contract + styled-layout chat review |
+| XLSX | 75/75 | unchanged domain suite | preservation matrix + cached-value gate + chat review |
+| PPTX editor | 44/44 | unchanged domain suite | preservation matrix + fake-soffice contract |
+| PPTX composer | 92/92 | unchanged domain suite | hash-bound SVG/PNG structural preview only |
+| Application Witness | 28/28 | unchanged domain suite | hermetic fake executable |
+| Repository integration | 41/41 | distribution inventory + descriptor-bound adapter gates | manual workflow contract |
+
+The authoritative cross-package run passes **366 tests plus 349 subtests** on Python 3.12. `scripts/test_all.py` passes **349/349** domain and integration cases. The same authoritative suite is required by repository CI on Python 3.11 and 3.12.
+
+Distribution evidence for the v0.5.0 candidate:
+
+- wheel and sdist build successfully into a fresh external directory;
+- the fail-closed verifier accepts exactly 71 wheel members and 200 sdist members;
+- the wheel metadata, sdist root, artifact filenames and CI clean-install assertion all require version `0.5.0`;
+- all five installed console scripts, packaged resources and every runtime Python module remain part of the distribution contract;
+- the DOCX implementation tree received independent architecture and presentation-contract `APPROVE` verdicts before its commit; the release process separately requires exact-tree review of the final version/documentation tree and green CI before tag publication.
+
+The DOCX preview is a bounded styled-layout proxy, not a Word render. Its profile, managed typography, page geometry, lists and tables are parity-tested against generated OOXML, while line wrapping, pagination and font substitution remain outside this bounded evidence.
+
 ## v0.4.0 bounded evidence
 
 | Domain | Local suite | Independent exact-tree gate | Application evidence |

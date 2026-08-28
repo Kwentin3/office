@@ -19,7 +19,7 @@ closed JSON/Python contract
 From the versioned GitHub archive (works in slim containers without a `git` binary):
 
 ```bash
-python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.4.0.zip"
+python -m pip install "kwentin-office @ https://github.com/Kwentin3/office/archive/refs/tags/v0.5.0.zip"
 ```
 
 For development:

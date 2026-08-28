@@ -80,9 +80,9 @@ WHEEL_RUNTIME = {
     "office_application_witness/api.py",
     "office_application_witness/contracts.py",
 }
-DIST_INFO = "kwentin_office-0.4.0.dist-info"
-WHEEL_FILENAME = "kwentin_office-0.4.0-py3-none-any.whl"
-SDIST_FILENAME = "kwentin_office-0.4.0.tar.gz"
+DIST_INFO = "kwentin_office-0.5.0.dist-info"
+WHEEL_FILENAME = "kwentin_office-0.5.0-py3-none-any.whl"
+SDIST_FILENAME = "kwentin_office-0.5.0.tar.gz"
 WHEEL_METADATA = {
     f"{DIST_INFO}/METADATA",
     f"{DIST_INFO}/WHEEL",
@@ -193,7 +193,7 @@ def metadata_is_valid(payload: bytes) -> bool:
         metadata.get_all(name) == [value]
         for name, value in (
             ("Name", "kwentin-office"),
-            ("Version", "0.4.0"),
+            ("Version", "0.5.0"),
             ("Requires-Python", ">=3.11"),
         )
     )
@@ -298,7 +298,7 @@ def main() -> int:
         or unexpected_wheel
         or missing_sdist
         or unexpected_sdist
-        or sdist_root != "kwentin_office-0.4.0"
+        or sdist_root != "kwentin_office-0.5.0"
         or duplicate_names
         or invalid_console_scripts
         or invalid_metadata
@@ -312,7 +312,7 @@ def main() -> int:
             "distribution verification failed: "
             f"missing_wheel={missing_wheel}, unexpected_wheel={unexpected_wheel}, "
             f"missing_sdist={missing_sdist}, unexpected_sdist={unexpected_sdist}, "
-            f"invalid_sdist_root={sdist_root != 'kwentin_office-0.4.0'}, duplicates={duplicate_names}, "
+            f"invalid_sdist_root={sdist_root != 'kwentin_office-0.5.0'}, duplicates={duplicate_names}, "
             f"invalid_console_scripts={invalid_console_scripts}, invalid_metadata={invalid_metadata}, "
             f"invalid_wheel_metadata={invalid_wheel_metadata}, invalid_record={invalid_record}, "
             f"invalid_top_level={invalid_top_level}, unsafe={bad}, non_files={non_files}"
